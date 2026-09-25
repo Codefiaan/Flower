@@ -99,3 +99,12 @@ def test_main_module_refuses_public_host_without_login(fresh_db, monkeypatch):
     prefs.set_login("eric", "long password")
     main_mod.main()
     assert called
+
+
+@pytest.mark.parametrize("addr", ["x@users.noreply.github.com", "no-reply@company.com", "NoReply@x.org"])
+def test_sec_contact_rejects_noreply(fresh_db, addr):
+    # CI run #3 proved the SEC answers HTTP 403 to no-reply contact addresses
+    with pytest.raises(ValueError, match="no-reply"):
+        prefs.update({"sec_contact": addr})
+    prefs.update({"sec_contact": "eric@example.org"})
+    assert prefs.get("sec_contact") == "eric@example.org"

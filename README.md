@@ -40,7 +40,7 @@ Copy `.env.example` to `.env`. The most important values:
 | `FLOWER_DEMO` | `0` | `1` = synthetic data, no network |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Listen address |
 | `FLOWER_USER` / `FLOWER_PASSWORD` | empty | Login (HTTP basic auth). **Required** on a server |
-| `SEC_CONTACT` | example address | Contact e-mail sent to SEC EDGAR, which their access policy requires |
+| `SEC_CONTACT` | example address | Contact e-mail sent to SEC EDGAR, which their access policy requires. Use a real address, because the SEC blocks no-reply addresses (HTTP 403). You can also set it on the Settings page |
 
 Everything else is set on the **Settings** page and stored in `data/flower.db`: API keys (never sent back to the browser), the login (stored as a salted hash), currency, data source and more. Values set on the Settings page override the `.env` defaults, except a login defined in `.env`, which always wins.
 

@@ -18,6 +18,7 @@ from .config import settings
 CURRENCIES = ["EUR", "USD", "CHF", "GBP", "JPY", "CAD", "AUD", "SEK", "NOK", "DKK", "PLN"]
 DEFAULT_MARKET = ["^GSPC", "^NDX", "^GDAXI", "^STOXX50E", "^N225", "^VIX", "^TNX", "EURUSD=X", "GC=F", "CL=F", "BTC-USD"]
 LENSES = ["general", "value", "growth"]
+PLACEHOLDER_SEC_CONTACT = "flower-terminal@example.com"
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9^=.\-]{1,20}$")
 
 
@@ -71,6 +72,8 @@ def _validate(key: str, value: Any) -> Any:
         v = str(value).strip()
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
             raise ValueError("SEC contact must be an e-mail address")
+        if re.search(r"no-?reply", v, re.I):
+            raise ValueError("The SEC blocks no-reply addresses - use an address you can receive mail at")
         return v
     if key == "ai_language":
         v = str(value).strip()[:40]

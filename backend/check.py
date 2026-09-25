@@ -91,6 +91,15 @@ def environment_checks() -> None:
         db.set_setting("check:last_run", time.strftime("%Y-%m-%d %H:%M:%S"))
         return str(path)
 
+    def sec_contact():
+        from . import prefs
+
+        contact = prefs.get("sec_contact")
+        if contact == prefs.PLACEHOLDER_SEC_CONTACT:
+            raise Warn("works, but the SEC asks for your real address: Settings -> Data & markets -> "
+                       "Contact e-mail for SEC EDGAR")
+        return contact
+
     def settings_summary():
         from . import llm, prefs
 
@@ -105,6 +114,7 @@ def environment_checks() -> None:
     check("Required packages", packages)
     check("Database writable", database)
     check("Settings", settings_summary, warn_only=True)
+    check("SEC contact address", sec_contact, warn_only=True)
 
 
 # --- in-process app self-test (demo data, temporary database) ---------------------------

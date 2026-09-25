@@ -134,3 +134,16 @@ def test_network_check_explains_blocked_connection(monkeypatch):
     assert check.network_checks() is False
     detail = dict((n, d) for _, n, d in check.RESULTS)["Network: Yahoo Finance"]
     assert "firewall, proxy or no internet" in detail
+
+
+def test_placeholder_sec_contact_is_a_warning(monkeypatch):
+    from backend import prefs
+    from backend.config import Settings
+
+    monkeypatch.setattr(prefs, "settings", Settings(sec_contact=prefs.PLACEHOLDER_SEC_CONTACT))
+    check.environment_checks()
+    assert statuses()["SEC contact address"] == "WARN"
+    check.RESULTS.clear()
+    prefs.update({"sec_contact": "eric@example.org"})
+    check.environment_checks()
+    assert statuses()["SEC contact address"] == "PASS"
