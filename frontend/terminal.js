@@ -492,6 +492,7 @@ function priceChart(container, rsiContainer) {
   }
   return {
     set(rows) {
+      if (!charts.includes(ch)) return; // the view was left while the data was loading
       candles.setData(rows.map((r) => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close })));
       s50.setData(rows.filter((r) => isNum(r.sma50)).map((r) => ({ time: r.time, value: r.sma50 })));
       s200.setData(rows.filter((r) => isNum(r.sma200)).map((r) => ({ time: r.time, value: r.sma200 })));

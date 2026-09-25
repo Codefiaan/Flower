@@ -192,7 +192,8 @@ def test_screener_builds_query_and_parses(monkeypatch):
     res = yahoo.YahooProvider().screen({"region": "eu", "pe_min": 0.1, "pe_max": 15, "div_min": 0.03, "sector": "Financial Services"})
     assert res[0]["symbol"] == "ALV.DE" and res[0]["div_yield"] == pytest.approx(0.05)
     text = str(seen["q"])
-    assert "'OR'" in text and "'de'" in text and "'fr'" in text             # Europe = any of several regions
+    assert "'exchange', 'GER'" in text and "'exchange', 'PAR'" in text     # Europe = its primary exchanges
+    assert "'exchange', 'STU'" not in text                               # no secondary listings
     assert "peratio.lasttwelvemonths" in text and "forward_dividend_yield" in text
     assert "3.0" in text                                                  # dividend passed in percent
 
@@ -216,3 +217,25 @@ def test_fx_uses_currency_pair_and_minor_units(fake_yf):
     assert p.fx("GBp", "EUR") == pytest.approx(1.29)
     with pytest.raises(RuntimeError):
         p.fx("CHF", "EUR")
+
+
+def test_screener_primary_exchanges_and_pe_safety_net(monkeypatch):
+    cache.clear()
+    seen = {}
+
+    def fake_screen(query, size, sortField, sortAsc):
+        seen["q"] = str(query.to_dict())
+        return {"quotes": [{"symbol": "ALV.DE", "trailingPE": 12.0},
+                           {"symbol": "SSU.SG", "trailingPE": 480.0},      # KRW earnings vs EUR price
+                           {"symbol": "NOPE.DE"}]}                          # no P/E: kept, shown as n/a
+
+    monkeypatch.setattr(yahoo.yf, "screen", fake_screen)
+    res = yahoo.YahooProvider().screen({"region": "de", "pe_max": 15})
+    assert [r["symbol"] for r in res] == ["ALV.DE", "NOPE.DE"]
+    assert "'exchange', 'GER'" in seen["q"] and "'region'" not in seen["q"]
+    cache.clear()
+    yahoo.YahooProvider().screen({"pe_max": 15})           # all regions -> all primary exchanges
+    assert "'NYQ'" in seen["q"] and "'GER'" in seen["q"] and "'PNK'" not in seen["q"]
+    cache.clear()
+    yahoo.YahooProvider().screen({"region": "it", "pe_max": 15})   # region without a mapping
+    assert "'region', 'it'" in seen["q"]

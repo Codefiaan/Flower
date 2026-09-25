@@ -188,3 +188,23 @@ def test_report_prompt_contains_sources_and_figures(net):
     prompt = body["messages"][1]["content"]
     assert '<source id="S1"' in prompt and "key_figures" in prompt and "guidance" in prompt
     assert "growth" in body["messages"][0]["content"].lower()
+
+
+@pytest.mark.parametrize("status,ctype,body", [
+    (200, "text/html", "<html>Your request has been identified as part of a network of automated tools</html>"),
+    (403, "text/html", "<html>Request Rate Threshold Exceeded</html>"),
+    (404, "application/json", '{"error": "not found"}'),
+])
+def test_sec_errors_say_what_the_sec_answered(net, status, ctype, body):
+    routes, seen = net
+    routes["company_tickers.json"] = lambda r: httpx.Response(status, text=body, headers={"content-type": ctype})
+    with pytest.raises(sec.SECError) as err:
+        sec.cik_for_or_raise("AAPL")
+    msg = str(err.value)
+    assert f"HTTP {status}" in msg and body[:30].strip("<>") .split(">")[0][:10] in msg
+    if status == 403 or "html" in ctype:
+        assert "refused" in msg
+    assert sec.cik_for("AAPL") is None            # the app itself degrades gracefully
+    ua = seen[-1].headers["User-Agent"]
+    assert ua.startswith("FlowerTerminal ") and "@" in ua
+    assert "gzip" in seen[-1].headers["Accept-Encoding"]

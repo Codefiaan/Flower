@@ -219,11 +219,12 @@ async function openSheet(sym) {
   if (uw) uw.addEventListener("click", async () => { await api(`/api/watchlist/${encodeURIComponent(sym)}`, { method: "DELETE" }); await loadOverview(); openSheet(sym); });
 
   if (sheetChart) sheetChart.remove();
-  sheetChart = LWC.createChart($("#sChart"), chartOpts());
-  const series = sheetChart.addAreaSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+  const chart = LWC.createChart($("#sChart"), chartOpts());
+  sheetChart = chart;
+  const series = chart.addAreaSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
   const loadChart = async (p) => {
     const rows = await api(`/api/history/${encodeURIComponent(sym)}?period=${p}`).catch(() => []);
-    if (state.selected !== sym || !sheetChart) return;
+    if (state.selected !== sym || sheetChart !== chart) return; // another stock was opened meanwhile
     const vals = rows.map((r) => r.close);
     const color = seriesColor(vals);
     series.applyOptions({ lineColor: color, topColor: color + "33", bottomColor: color + "00" });

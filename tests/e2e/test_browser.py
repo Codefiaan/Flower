@@ -295,3 +295,32 @@ def test_phone_width_has_no_horizontal_scroll(browser, server, path):
     overflow = pg.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     p.close()
     assert overflow <= 1, f"{path} scrolls sideways by {overflow}px on a phone"
+
+
+def test_rapid_tab_switching_has_no_errors(page):
+    """Charts must survive being removed while their data is still loading (seen on fast CI machines)."""
+    pg = page.goto("/terminal#/sec/AAPL/des")
+    pg.wait_for_selector(".tabs button[data-t=gp]")
+    # slow down the price-history responses so they always arrive after the chart was removed
+    pg.route("**/api/history/**", lambda route: (time.sleep(0.4), route.continue_())[1])
+    for _ in range(3):
+        for tab in ("gp", "des", "ev", "gp", "fa", "des"):
+            pg.click(f".tabs button[data-t={tab}]", no_wait_after=True)
+    pg.click(".pages a[href='/overview']")
+    pg.wait_for_selector(".row-item, .empty")
+    pg.wait_for_timeout(2500)  # let the delayed responses land
+
+
+def test_overview_rapid_sheet_switching(page):
+    api(page, "POST", "/api/portfolio", {"symbol": "KO", "shares": 1, "buy_price": 50})
+    api(page, "POST", "/api/watchlist", {"symbol": "JNJ"})
+    pg = page.goto("/overview")
+    pg.wait_for_selector(".row-item[data-s=KO]")
+    pg.route("**/api/history/**", lambda route: (time.sleep(0.4), route.continue_())[1])
+    for _ in range(3):
+        for sym in ("KO", "JNJ"):
+            pg.click(f".row-item[data-s={sym}]", no_wait_after=True)
+            pg.click("#sPeriods button[data-p='1mo']", no_wait_after=True)
+        pg.keyboard.press("Escape")
+        pg.click("#periods button[data-p='1mo']", no_wait_after=True)
+    pg.wait_for_timeout(2500)

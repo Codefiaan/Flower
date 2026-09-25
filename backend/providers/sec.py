@@ -23,18 +23,47 @@ SHARES_TAGS = [("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding"),
 ANNUAL_FORMS = {"10-K", "10-K/A", "20-F", "20-F/A", "40-F"}
 
 
-def _client() -> httpx.Client:
+class SECError(RuntimeError):
+    pass
+
+
+def user_agent() -> str:
+    """The format the SEC asks for: "<Company or app name> <contact e-mail>"."""
     from .. import prefs
 
-    return httpx.Client(headers={"User-Agent": f"Flower Terminal {prefs.get('sec_contact')}"}, timeout=30,
-                        follow_redirects=True)
+    return f"FlowerTerminal {prefs.get('sec_contact')}"
+
+
+def _client() -> httpx.Client:
+    return httpx.Client(headers={"User-Agent": user_agent(), "Accept-Encoding": "gzip, deflate"},
+                        timeout=30, follow_redirects=True)
+
+
+def _get_json(url: str):
+    """GET a JSON document from the SEC; errors say exactly what the SEC answered."""
+    with _client() as c:
+        r = c.get(url)
+    ctype = r.headers.get("content-type", "")
+    if r.status_code != 200 or "json" not in ctype:
+        snippet = " ".join(r.text[:200].split())
+        hint = (" - the SEC refused the request; it blocks clients without a contact address and "
+                "some shared cloud networks" if r.status_code in (403, 429) or "html" in ctype else "")
+        raise SECError(f"{url} -> HTTP {r.status_code}, {ctype or 'no content type'}: {snippet!r}{hint}")
+    return r.json()
 
 
 @ttl_cache(86400)
 def ticker_map() -> dict[str, int]:
-    with _client() as c:
-        data = c.get("https://www.sec.gov/files/company_tickers.json").json()
+    data = _get_json("https://www.sec.gov/files/company_tickers.json")
     return {v["ticker"].upper(): int(v["cik_str"]) for v in data.values()}
+
+
+def cik_for_or_raise(symbol: str) -> int:
+    """Like cik_for, but raises with the SEC's answer instead of hiding the problem."""
+    cik = ticker_map().get(symbol.upper())
+    if not cik:
+        raise SECError(f"{symbol} not found in EDGAR's ticker list")
+    return cik
 
 
 def cik_for(symbol: str) -> int | None:
@@ -49,8 +78,7 @@ def cik_for(symbol: str) -> int | None:
 
 @ttl_cache(43200)
 def company_facts(cik: int) -> dict:
-    with _client() as c:
-        return c.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json").json()
+    return _get_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json")
 
 
 def annual_series(facts: dict, tags: list[tuple[str, str]]) -> tuple[dict[str, float], str | None]:
@@ -96,8 +124,7 @@ def long_history(symbol: str) -> dict | None:
 
 @ttl_cache(21600)
 def recent_filings(cik: int, forms: tuple[str, ...] = ("10-K", "20-F", "40-F", "10-Q"), limit: int = 3) -> list[dict]:
-    with _client() as c:
-        data = c.get(f"https://data.sec.gov/submissions/CIK{cik:010d}.json").json()
+    data = _get_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
     recent = data.get("filings", {}).get("recent", {})
     out = []
     for i, form in enumerate(recent.get("form", [])):

@@ -33,7 +33,14 @@ PERIODS = {
     "max": ("max", "1mo"),
 }
 
-EUROPE = ["de", "fr", "nl", "it", "es", "be", "ch", "gb", "se", "dk", "fi", "no", "at", "ie", "pt"]
+# Primary exchanges per screener region. Filtering on them keeps out secondary listings such as
+# Samsung on the Stuttgart exchange (SSU.SG), whose quoted P/E mixes EUR prices with KRW earnings.
+PRIMARY_EXCHANGES = {
+    "us": ["NMS", "NYQ", "NGM", "NCM", "ASE"],
+    "de": ["GER"], "gb": ["LSE"], "fr": ["PAR"], "ch": ["EBS"], "nl": ["AMS"], "jp": ["JPX"],
+    "eu": ["GER", "PAR", "AMS", "MIL", "MCE", "EBS", "LSE", "STO", "CPH", "HEL", "OSL", "VIE", "ISE", "LIS", "BRU"],
+}
+ALL_PRIMARY = sorted({x for v in PRIMARY_EXCHANGES.values() for x in v})
 
 
 def _num(v: Any) -> float | None:
@@ -251,9 +258,10 @@ class YahooProvider(Provider):
         Q = yf.EquityQuery
         parts = []
         region = filters.get("region")
-        if region == "eu":
-            parts.append(Q("is-in", ["region", *EUROPE]))
-        elif region:
+        exchanges = PRIMARY_EXCHANGES.get(region, ALL_PRIMARY) if region in PRIMARY_EXCHANGES or not region else None
+        if exchanges:
+            parts.append(Q("is-in", ["exchange", *exchanges]))
+        if region and region not in PRIMARY_EXCHANGES:
             parts.append(Q("eq", ["region", region]))
         if filters.get("sector"):
             parts.append(Q("eq", ["sector", filters["sector"]]))
@@ -289,6 +297,13 @@ class YahooProvider(Provider):
                 "high52": _num(q.get("fiftyTwoWeekHigh")),
                 "low52": _num(q.get("fiftyTwoWeekLow")),
             })
+        # Safety net: Yahoo filters on the company's P/E, but a listing's quoted P/E can differ.
+        lo, hi = filters.get("pe_min"), filters.get("pe_max")
+        if lo is not None or hi is not None:
+            kept = [r for r in out if r["pe"] is None or ((lo is None or r["pe"] >= lo) and (hi is None or r["pe"] <= hi * 1.05))]
+            if len(kept) < len(out):
+                log.info("screener dropped %d rows whose quoted P/E contradicts the filter", len(out) - len(kept))
+            out = kept
         return out
 
     def screen(self, filters: dict) -> list[dict]:

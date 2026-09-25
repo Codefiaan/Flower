@@ -149,6 +149,12 @@ def app_selftest() -> None:
 
 # --- live data ---------------------------------------------------------------------
 
+def _sec_optional() -> bool:
+    """CI sets FLOWER_CHECK_SEC_OPTIONAL=1 because the SEC may block shared cloud servers;
+    on a normal PC SEC problems stay real failures."""
+    return os.environ.get("FLOWER_CHECK_SEC_OPTIONAL") == "1"
+
+
 def network_checks() -> bool:
     """Can this machine reach the data sources at all? Returns False if Yahoo is unreachable."""
     import httpx
@@ -171,7 +177,19 @@ def network_checks() -> bool:
         return fn
 
     check("Network: Yahoo Finance", probe("yahoo", "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d"))
-    check("Network: SEC EDGAR", probe("sec", "https://www.sec.gov/files/company_tickers.json"))
+    def sec_probe():
+        # Same client and User-Agent as the app, so this tests what the app will really get.
+        from .providers import sec
+
+        try:
+            data = sec._get_json("https://www.sec.gov/files/company_tickers.json")
+        except sec.SECError as exc:
+            raise AssertionError(str(exc))
+        except httpx.HTTPError as exc:
+            raise AssertionError(f"cannot connect ({type(exc).__name__}: {exc}) - firewall, proxy or no internet?")
+        return f"OK, {len(data)} companies in EDGAR's ticker list (User-Agent: {sec.user_agent()})"
+
+    check("Network: SEC EDGAR", sec_probe, warn_only=_sec_optional())
     return reachable.get("yahoo", False)
 
 
@@ -246,7 +264,7 @@ def live_checks() -> None:
         ok(all(r["symbol"] for r in res), "results without symbol")
         with_pe = [r for r in res if r.get("pe") is not None]
         ok(with_pe, "no P/E values in screener results")
-        bad = [r["symbol"] for r in with_pe if not (0 < r["pe"] <= 15.5)]
+        bad = [r["symbol"] for r in with_pe if not (0 < r["pe"] <= 15 * 1.05 + 0.01)]
         ok(not bad, f"P/E filter not applied: {bad[:5]}")
         return f"{len(res)} results, e.g. {res[0]['symbol']} P/E {res[0]['pe']}"
 
@@ -258,13 +276,14 @@ def live_checks() -> None:
         return f"USD->EUR {r:.4f}, GBp->EUR {gbp:.5f}"
 
     def sec_history():
+        sec.company_facts(sec.cik_for_or_raise("AAPL"))  # surfaces the SEC's exact answer on failure
         h = sec.long_history("AAPL")
         ok(h and len(h["eps"]) >= 8, f"expected 8+ years of EPS from SEC, got {h and len(h['eps'])}")
         years = sorted(h["eps"])
         return f"{len(years)} fiscal years of EPS ({years[0][:4]}-{years[-1][:4]}), currency {h['currency']}"
 
     def sec_filings():
-        cik = sec.cik_for("AAPL")
+        cik = sec.cik_for_or_raise("AAPL")
         ok(cik == 320193, f"unexpected CIK for AAPL: {cik}")
         f = sec.recent_filings(cik)
         ok(any(x["form"] == "10-K" for x in f), f"no 10-K among {[x['form'] for x in f]}")
@@ -280,8 +299,8 @@ def live_checks() -> None:
     check("Yahoo search", search)
     check("Yahoo screener", screener)
     check("FX rates", fx)
-    check("SEC EDGAR XBRL history", sec_history)
-    check("SEC EDGAR filings", sec_filings)
+    check("SEC EDGAR XBRL history", sec_history, warn_only=_sec_optional())
+    check("SEC EDGAR filings", sec_filings, warn_only=_sec_optional())
 
 
 def llm_check() -> None:

@@ -73,6 +73,8 @@ def test_live_checks_with_plausible_data(monkeypatch):
     monkeypatch.setattr(yahoo, "YahooProvider", FakeYahoo)
     monkeypatch.setattr(sec, "long_history", lambda s: {"eps": {f"{y}-12-31": 1.0 for y in range(2010, 2025)}, "currency": "USD"})
     monkeypatch.setattr(sec, "cik_for", lambda s: 320193)
+    monkeypatch.setattr(sec, "cik_for_or_raise", lambda s: 320193)
+    monkeypatch.setattr(sec, "company_facts", lambda cik: {})
     monkeypatch.setattr(sec, "recent_filings", lambda cik: [{"form": "10-K", "filed": "2024-11-01"}])
     check.live_checks()
     s = statuses()
@@ -96,12 +98,30 @@ def test_live_checks_report_format_problems(monkeypatch):
     monkeypatch.setattr(yahoo, "YahooProvider", Broken)
     monkeypatch.setattr(sec, "long_history", lambda s: None)
     monkeypatch.setattr(sec, "cik_for", lambda s: None)
+
+    def blocked(s):
+        raise sec.SECError("https://www.sec.gov/files/company_tickers.json -> HTTP 403, text/html: 'blocked'")
+
+    monkeypatch.setattr(sec, "cik_for_or_raise", blocked)
     check.live_checks()
     by_name = {n: (st, d) for st, n, d in check.RESULTS}
     assert by_name["Yahoo statements AAPL"][0] == "FAIL" and "cashflow statement empty" in by_name["Yahoo statements AAPL"][1]
     assert by_name["Yahoo screener"][0] == "FAIL" and "P/E filter not applied" in by_name["Yahoo screener"][1]
     assert by_name["Yahoo quote AAPL"][0] == "WARN" and "missing fields" in by_name["Yahoo quote AAPL"][1]
-    assert by_name["SEC EDGAR XBRL history"][0] == "FAIL"
+    assert by_name["SEC EDGAR XBRL history"][0] == "FAIL" and "HTTP 403" in by_name["SEC EDGAR XBRL history"][1]
+
+
+def test_sec_can_be_optional_in_ci(monkeypatch):
+    from backend.providers import sec
+
+    def blocked(s):
+        raise sec.SECError("HTTP 403")
+
+    monkeypatch.setenv("FLOWER_CHECK_SEC_OPTIONAL", "1")
+    monkeypatch.setattr(sec, "cik_for_or_raise", blocked)
+    monkeypatch.setattr(sec, "long_history", lambda s: None)
+    check.check("SEC EDGAR filings", lambda: sec.cik_for_or_raise("AAPL"), warn_only=check._sec_optional())
+    assert statuses()["SEC EDGAR filings"] == "WARN"
 
 
 def test_network_check_explains_blocked_connection(monkeypatch):
