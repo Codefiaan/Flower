@@ -75,10 +75,33 @@ def test_live_checks_with_plausible_data(monkeypatch):
     monkeypatch.setattr(sec, "cik_for", lambda s: 320193)
     monkeypatch.setattr(sec, "cik_for_or_raise", lambda s: 320193)
     monkeypatch.setattr(sec, "company_facts", lambda cik: {})
-    monkeypatch.setattr(sec, "recent_filings", lambda cik: [{"form": "10-K", "filed": "2024-11-01"}])
+    from datetime import date, timedelta
+
+    recent = (date.today() - timedelta(days=200)).isoformat()
+    monkeypatch.setattr(sec, "latest_filings", lambda cik: {
+        "annual": {"form": "10-K", "filed": recent, "period": recent},
+        "quarterly": {"form": "10-Q", "filed": recent, "period": recent}})
     check.live_checks()
     s = statuses()
     assert all(v == "PASS" for v in s.values()), check.RESULTS
+
+
+def test_live_check_flags_missing_or_stale_annual_report(monkeypatch):
+    from backend.providers import sec, yahoo
+
+    monkeypatch.setattr(yahoo, "YahooProvider", FakeYahoo)
+    monkeypatch.setattr(sec, "long_history", lambda s: {"eps": {f"{y}-12-31": 1.0 for y in range(2010, 2025)}, "currency": "USD"})
+    monkeypatch.setattr(sec, "cik_for_or_raise", lambda s: 320193)
+    monkeypatch.setattr(sec, "company_facts", lambda cik: {})
+    monkeypatch.setattr(sec, "latest_filings", lambda cik: {"annual": None, "quarterly": {"form": "10-Q", "filed": "2026-08-01", "period": ""}})
+    check.live_checks()
+    detail = {n: (st, d) for st, n, d in check.RESULTS}["SEC EDGAR filings"]
+    assert detail[0] == "FAIL" and "no annual report" in detail[1]
+    check.RESULTS.clear()
+    monkeypatch.setattr(sec, "latest_filings", lambda cik: {"annual": {"form": "10-K", "filed": "2019-11-01", "period": ""}, "quarterly": None})
+    check.live_checks()
+    detail = {n: (st, d) for st, n, d in check.RESULTS}["SEC EDGAR filings"]
+    assert detail[0] == "FAIL" and "days old" in detail[1]
 
 
 def test_live_checks_report_format_problems(monkeypatch):

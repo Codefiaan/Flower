@@ -95,9 +95,9 @@ def test_sec_filings_and_documents(net):
     routes, seen = net
     _sec_routes(routes)
     assert sec.cik_for("aapl") == 320193
-    filings = sec.recent_filings(320193)
-    assert [f["form"] for f in filings] == ["10-Q", "10-K", "10-Q"]
-    assert filings[1]["url"].endswith("/320193/000032019324000123/aapl-20240928.htm")
+    latest = sec.latest_filings(320193)
+    assert latest["annual"]["form"] == "10-K" and latest["quarterly"]["filed"] == "2025-08-01"
+    assert latest["annual"]["url"].endswith("/320193/000032019324000123/aapl-20240928.htm")
     docs = reports.find_documents("AAPL", "Apple Inc.", "https://apple.com")
     assert [d["title"].split(" (")[0] for d in docs] == ["Apple Inc. 10-K", "Apple Inc. 10-Q"]
     assert "guidance" in docs[0]["text"] and docs[0]["source"] == "SEC EDGAR"
@@ -208,3 +208,37 @@ def test_sec_errors_say_what_the_sec_answered(net, status, ctype, body):
     ua = seen[-1].headers["User-Agent"]
     assert ua.startswith("FlowerTerminal ") and "@" in ua
     assert "gzip" in seen[-1].headers["Accept-Encoding"]
+
+
+def _submissions(forms, dates, name="Apple Inc."):
+    n = len(forms)
+    return {"name": name, "filings": {"recent": {
+        "form": forms, "accessionNumber": [f"0000320193-25-{i:06d}" for i in range(n)],
+        "filingDate": dates, "reportDate": dates, "primaryDocument": [f"doc{i}.htm" for i in range(n)]}}}
+
+
+def test_annual_report_found_even_after_many_quarterlies(net):
+    """Found by live CI run #4: Apple's newest three filings were 10-Qs, so the 10-K was cut off."""
+    routes, _ = net
+    routes["company_tickers.json"] = lambda r: httpx.Response(200, json={"0": {"cik_str": 320193, "ticker": "AAPL"}})
+    subs = _submissions(["10-Q", "8-K", "10-Q", "10-Q", "8-K", "10-K", "10-Q"],
+                        ["2026-08-01", "2026-07-30", "2026-05-02", "2026-01-31", "2025-11-01", "2025-10-31", "2025-08-01"])
+    routes["submissions/CIK0000320193.json"] = lambda r: httpx.Response(200, json=subs)
+    routes["Archives/edgar/data/320193/"] = lambda r: httpx.Response(200, text=f"<p>{LONG}</p>")
+    latest = sec.latest_filings(320193)
+    assert latest["annual"]["form"] == "10-K" and latest["annual"]["filed"] == "2025-10-31"
+    assert latest["quarterly"]["filed"] == "2026-08-01"
+    docs = reports.find_documents("AAPL", "Apple Inc.", None)
+    assert docs[0]["title"].startswith("Apple Inc. 10-K") and docs[1]["title"].startswith("Apple Inc. 10-Q")
+
+
+def test_foreign_issuer_20f_and_amendment_fallback(net):
+    routes, _ = net
+    subs = _submissions(["6-K", "20-F/A", "6-K", "20-F"], ["2026-06-01", "2026-05-01", "2026-04-01", "2026-03-01"], "ASML")
+    routes["submissions/CIK0000937966.json"] = lambda r: httpx.Response(200, json=subs)
+    latest = sec.latest_filings(937966)
+    assert latest["annual"]["form"] == "20-F"        # the original report is preferred over an amendment
+    assert latest["quarterly"] is None
+    only_amendment = _submissions(["10-K/A", "10-Q"], ["2026-02-01", "2026-05-01"])
+    routes["submissions/CIK0000000001.json"] = lambda r: httpx.Response(200, json=only_amendment)
+    assert sec.latest_filings(1)["annual"]["form"] == "10-K/A"

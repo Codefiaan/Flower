@@ -176,13 +176,13 @@ def find_documents(symbol: str, name: str, website: str | None) -> list[dict]:
     cik = sec.cik_for(symbol)
     if cik:
         try:
-            filings = sec.recent_filings(cik)
+            latest = sec.latest_filings(cik)
         except Exception as exc:
             log.warning("EDGAR filings for %s failed: %s", symbol, exc)
-            filings = []
-        annual = [f for f in filings if f["form"] != "10-Q"][:1]
-        quarterly = [f for f in filings if f["form"] == "10-Q"][:1]
-        for f in annual + quarterly:
+            latest = {}
+        for f in (latest.get("annual"), latest.get("quarterly")):  # annual report first
+            if not f:
+                continue
             try:
                 text = to_text(_download(f["url"]), f["url"])
             except Exception as exc:

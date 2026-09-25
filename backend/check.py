@@ -295,9 +295,15 @@ def live_checks() -> None:
     def sec_filings():
         cik = sec.cik_for_or_raise("AAPL")
         ok(cik == 320193, f"unexpected CIK for AAPL: {cik}")
-        f = sec.recent_filings(cik)
-        ok(any(x["form"] == "10-K" for x in f), f"no 10-K among {[x['form'] for x in f]}")
-        return ", ".join(f"{x['form']} {x['filed']}" for x in f)
+        latest = sec.latest_filings(cik)
+        annual, quarterly = latest.get("annual"), latest.get("quarterly")
+        ok(annual is not None, "no annual report (10-K) found in EDGAR's filing list")
+        from datetime import date
+
+        age_days = (date.today() - date.fromisoformat(annual["filed"])).days
+        ok(age_days <= 460, f"newest annual report is {age_days} days old ({annual['form']} filed {annual['filed']})")
+        found = [x for x in (annual, quarterly) if x]
+        return ", ".join(f"{x['form']} filed {x['filed']} (period {x['period']})" for x in found)
 
     for sym, fundamentals in (("AAPL", True), ("SAP.DE", True), ("^GDAXI", False), ("EURUSD=X", False)):
         check(f"Yahoo quote {sym}", quote(sym, fundamentals))

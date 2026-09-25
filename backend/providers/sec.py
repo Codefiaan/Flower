@@ -122,25 +122,40 @@ def long_history(symbol: str) -> dict | None:
     return {"eps": eps, "revenue_per_share": rps, "currency": cur, "source": "SEC EDGAR XBRL"}
 
 
+ANNUAL_REPORTS = ("10-K", "20-F", "40-F")
+
+
 @ttl_cache(21600)
-def recent_filings(cik: int, forms: tuple[str, ...] = ("10-K", "20-F", "40-F", "10-Q"), limit: int = 3) -> list[dict]:
+def latest_filings(cik: int) -> dict:
+    """Newest annual report (10-K / 20-F / 40-F) and newest quarterly report (10-Q).
+
+    Scans the whole recent-filings list: companies file several 10-Qs and 8-Ks after each
+    10-K, so the annual report is often not among the newest few entries. An amendment
+    (e.g. 10-K/A) is only used when no original annual report is listed.
+    """
     data = _get_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
     recent = data.get("filings", {}).get("recent", {})
-    out = []
-    for i, form in enumerate(recent.get("form", [])):
-        if form not in forms:
+    found: dict[str, dict | None] = {"annual": None, "annual_amendment": None, "quarterly": None}
+    for i, form in enumerate(recent.get("form", [])):  # newest first
+        if form in ANNUAL_REPORTS:
+            key = "annual"
+        elif form.endswith("/A") and form[:-2] in ANNUAL_REPORTS:
+            key = "annual_amendment"
+        elif form == "10-Q":
+            key = "quarterly"
+        else:
+            continue
+        if found[key] is not None:
             continue
         acc = recent["accessionNumber"][i].replace("-", "")
-        out.append({
+        found[key] = {
             "form": form,
             "filed": recent["filingDate"][i],
-            "period": recent.get("reportDate", [""] * (i + 1))[i],
+            "period": (recent.get("reportDate") or [""] * (i + 1))[i],
             "url": f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/{recent['primaryDocument'][i]}",
             "company": data.get("name"),
-        })
-        if len(out) >= limit:
-            break
-    return out
+        }
+    return {"annual": found["annual"] or found["annual_amendment"], "quarterly": found["quarterly"]}
 
 
 def fetch_document(url: str, max_bytes: int = 40_000_000) -> bytes:
