@@ -15,6 +15,7 @@ const VIEWS = { market: "MKT", portfolio: "PORT", watchlist: "WATCH", screener: 
 let charts = [];
 let aiAbort = null;
 let baseCurrency = "EUR";
+let defaultLens = "general";
 
 /* ---------- status & utilities ---------- */
 
@@ -102,6 +103,7 @@ function runCommand(text) {
                   SCRN: "screener", EQS: "screener", NEWS: "news", N: "news", HELP: "help", H: "help" };
   if (words.length === 1 && alias[words[0]]) return go(`#/${alias[words[0]]}`);
   if (words[0] === "SET" || words[0] === "SETTINGS") { location.href = "/settings"; return; }
+  if (words[0] === "KEY" || words[0] === "APIKEY") { location.href = "/settings#ai"; return; }
   if (words[0] === "OV" || words[0] === "OVERVIEW") { location.href = "/overview"; return; }
   const sym = words[0];
   const fn = (words[1] || "DES").toLowerCase();
@@ -434,7 +436,8 @@ function renderHelp() {
     ["AAPL CN", "Company news, upcoming earnings and dividend dates"],
     ["AAPL AI", "AI analysis of the latest annual report (needs an API key under Settings)"],
     ["MKT / PORT / WATCH / SCRN / NEWS", "Switch views (or F1-F5)"],
-    ["OV", "Open the Overview page"], ["SET", "Open Settings (LLM & search API keys)"],
+    ["OV", "Open the Overview page (or click OVERVIEW top right)"], ["SET", "Open Settings (or click SETTINGS top right)"],
+    ["KEY", "Settings → AI model & API key"],
     ["Any letter or /", "Jumps into the command line"],
   ];
   view.innerHTML = `<div class="panel"><h3>Help</h3><div class="body"><table class="t help"><tbody>
@@ -620,6 +623,7 @@ async function tabAi(sym, info, el) {
       <h3>Ask about ${esc(sym)}</h3><div class="chat" id="chat"></div>
       <form class="inline" id="ask"><input name="q" style="flex:1" placeholder="e.g. How dependent is the company on China?" required><button class="btn">ASK</button></form></div></div>`;
   const out = $("#ai-out"), st = $("#ai-status");
+  $("#lens").value = defaultLens;
   let sources = [], text = "";
   const history = [];
   const showSources = () => {
@@ -635,14 +639,14 @@ async function tabAi(sym, info, el) {
         if (ev.type === "status") st.textContent = ev.text;
         if (ev.type === "sources") { sources = ev.sources; showSources(); if (ev.cached) st.textContent = `Cached analysis from ${ev.cached}. Press REFRESH for a new one.`; }
         if (ev.type === "delta") { text += ev.text; out.innerHTML = markdown(text, sources); }
-        if (ev.type === "error") { st.innerHTML = `<span class="err">${esc(ev.text)}</span> ${ev.text.includes("Settings") ? '<a href="/settings">Open settings</a>' : ""}`; }
+        if (ev.type === "error") { st.innerHTML = `<span class="err">${esc(ev.text)}</span> ${ev.text.includes("Settings") ? '<a href="/settings#ai">Open settings</a>' : ""}`; }
         if (ev.type === "done" && !st.textContent.startsWith("Cached")) st.textContent = "Done. AI output can contain errors - check the cited sources.";
       }, aiAbort.signal);
     } catch (e) { if (e.name !== "AbortError") st.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   }
   $("#gen").addEventListener("click", () => run(false));
   $("#regen").addEventListener("click", () => run(true));
-  const cached = await api(`/api/ai/report/${encodeURIComponent(sym)}?lens=general`).catch(() => null);
+  const cached = await api(`/api/ai/report/${encodeURIComponent(sym)}?lens=${defaultLens}`).catch(() => null);
   if (cached) {
     sources = cached.sources; showSources();
     out.innerHTML = markdown(cached.content, sources);
@@ -674,6 +678,15 @@ async function tabAi(sym, info, el) {
 
 api("/api/status").then((s) => {
   baseCurrency = s.base_currency;
+  defaultLens = s.ai_lens || "general";
+  if (s.refresh_minutes > 0) {
+    // Re-render list views periodically; detail pages and forms are left alone so nothing you type is lost.
+    setInterval(() => {
+      const v = location.hash.replace(/^#\/?/, "").split("/")[0] || "market";
+      const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+      if (["market", "watchlist", "news"].includes(v) && !typing) route();
+    }, s.refresh_minutes * 60_000);
+  }
   const tag = $("#provider");
   tag.textContent = s.demo ? "DEMO DATA" : s.provider.toUpperCase();
   tag.classList.toggle("demo", s.demo);

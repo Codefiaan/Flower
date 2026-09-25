@@ -7,9 +7,11 @@ The app has two front ends over the same data:
 
 | Page | URL | Style |
 |---|---|---|
-| **Terminal** | `/` | Keyboard-first, black and amber, dense tables, command line (`SAP.DE <GO>`, `AAPL FA`), F-keys |
+| **Terminal** | `/terminal` | Keyboard-first, black and amber, dense tables, command line (`SAP.DE <GO>`, `AAPL FA`), F-keys |
 | **Overview** | `/overview` | Clean, minimal mobile-first list of all your stocks with a portfolio chart (light/dark) |
-| Settings | `/settings` | LLM provider and API key, web-search provider |
+| **Settings** | `/settings` | All settings: start page, theme, currency, auto-refresh, data source, market symbols, AI provider and API key, web search, login, backup/import |
+
+`/` opens the start page you choose in Settings. Every page has a **Terminal · Overview · Settings** switcher at the top.
 
 ## Quick start
 
@@ -40,7 +42,7 @@ Copy `.env.example` to `.env`. The most important values:
 | `FLOWER_USER` / `FLOWER_PASSWORD` | empty | Login (HTTP basic auth). **Required** on a server |
 | `SEC_CONTACT` | example address | Contact e-mail sent to SEC EDGAR, which their access policy requires |
 
-The LLM and search API keys are entered on the **Settings** page. They are stored in `data/flower.db` on the server and are never sent back to the browser.
+Everything else is set on the **Settings** page and stored in `data/flower.db`: API keys (never sent back to the browser), the login (stored as a salted hash), currency, data source and more. Values set on the Settings page override the `.env` defaults, except a login defined in `.env`, which always wins.
 
 ## Features
 
@@ -72,7 +74,7 @@ cd /opt/flower
 sudo -u flower python3 -m venv .venv
 sudo -u flower .venv/bin/pip install -r requirements.txt
 sudo -u flower cp .env.example .env
-sudo -u flower nano .env      # set FLOWER_USER, FLOWER_PASSWORD, SEC_CONTACT
+sudo -u flower nano .env      # set FLOWER_USER, FLOWER_PASSWORD, SEC_CONTACT (or set the login later on the Settings page)
 sudo cp deploy/flower.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now flower
 ```

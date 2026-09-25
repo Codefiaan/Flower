@@ -11,7 +11,6 @@ from datetime import date
 import httpx
 
 from ..cache import ttl_cache
-from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +24,9 @@ ANNUAL_FORMS = {"10-K", "10-K/A", "20-F", "20-F/A", "40-F"}
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(headers={"User-Agent": f"Flower Terminal {settings.sec_contact}"}, timeout=30,
+    from .. import prefs
+
+    return httpx.Client(headers={"User-Agent": f"Flower Terminal {prefs.get('sec_contact')}"}, timeout=30,
                         follow_redirects=True)
 
 

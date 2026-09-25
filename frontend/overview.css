@@ -31,9 +31,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .nav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
 .logo { font-weight: 800; font-size: 20px; letter-spacing: -.5px; text-decoration: none; }
-.nav nav { display: flex; gap: 18px; }
-.nav nav a { text-decoration: none; color: var(--muted); font-weight: 500; }
-.nav nav a.active, .nav nav a:hover { color: var(--text); }
+.pages { display: flex; gap: 2px; background: var(--soft); border-radius: 999px; padding: 3px; }
+.pages a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 14px; padding: 6px 14px; border-radius: 999px; }
+.pages a:hover { color: var(--text); }
+.pages a.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
 .icon { margin-left: auto; background: var(--soft); color: var(--text); border: 0; border-radius: 999px; width: 36px; height: 36px; cursor: pointer; display: grid; place-items: center; }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 1320px; margin: 0 auto; padding: 0 24px 90px; gap: 32px; }
@@ -143,7 +144,8 @@ dialog .row { display: flex; gap: 10px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 @media (max-width: 640px) {
-  .nav { padding: 12px 16px; gap: 14px; }
+  .nav { padding: 12px 16px; gap: 10px; }
+  .pages a { padding: 6px 10px; font-size: 13px; }
   .layout { padding: 0 16px 90px; }
   .hero .value { font-size: 36px; }
   .row-item { padding: 12px 4px; }

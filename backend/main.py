@@ -6,17 +6,18 @@ import csv
 import io
 import json
 import logging
-import secrets
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Iterator
 
 import pandas as pd
+from starlette.background import BackgroundTask
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, db, llm, portfolio, reports, screener
+from . import analysis, cache, db, llm, portfolio, prefs, reports, screener
 from .cache import ttl_cache
 from .config import ROOT, settings
 from .providers import get_provider
@@ -27,7 +28,6 @@ log = logging.getLogger("flower")
 
 FRONTEND = ROOT / "frontend"
 
-MARKET = ["^GSPC", "^NDX", "^GDAXI", "^STOXX50E", "^N225", "^VIX", "^TNX", "EURUSD=X", "GC=F", "CL=F", "BTC-USD"]
 MARKET_NAMES = {"^GSPC": "S&P 500", "^NDX": "Nasdaq 100", "^GDAXI": "DAX", "^STOXX50E": "Euro Stoxx 50",
                 "^N225": "Nikkei 225", "^VIX": "VIX", "^TNX": "US 10Y yield", "EURUSD=X": "EUR/USD",
                 "GC=F": "Gold", "CL=F": "WTI crude", "BTC-USD": "Bitcoin"}
@@ -40,19 +40,20 @@ db.init()
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if not settings.password:
+    if not prefs.login_source():
         # Safety net: a request that came through a reverse proxy means the app is exposed
         # beyond this machine, so refuse to serve private portfolio data without a login.
         if request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip"):
             return Response("Flower is reachable through a proxy but no login is set. "
-                            "Set FLOWER_USER and FLOWER_PASSWORD in .env and restart.", status_code=403)
+                            "Set a login in .env (FLOWER_USER / FLOWER_PASSWORD) or on the Settings page "
+                            "while connected locally.", status_code=403)
         return await call_next(request)
     header = request.headers.get("authorization", "")
     ok = False
     if header.lower().startswith("basic "):
         try:
             user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
-            ok = secrets.compare_digest(user, settings.user or "flower") and secrets.compare_digest(pw, settings.password)
+            ok = prefs.check_login(user, pw)
         except Exception:
             ok = False
     if not ok:
@@ -83,21 +84,28 @@ def _map(fn, items: list) -> list:
 
 @app.get("/api/status")
 def status():
-    return {"provider": P().name, "demo": settings.demo, "base_currency": settings.base_currency,
-            "llm_configured": llm.load_config().configured}
+    return {"provider": P().name, "demo": prefs.is_demo(), "base_currency": prefs.get("base_currency"),
+            "llm_configured": llm.load_config().configured, "refresh_minutes": prefs.get("refresh_minutes"),
+            "theme": prefs.get("theme"), "ai_lens": prefs.get("ai_lens")}
 
 
 @app.get("/api/market")
 def market():
     def tile(sym: str) -> dict:
         h = P().history(sym, "1mo")
+        name = MARKET_NAMES.get(sym)
+        if not name:
+            try:
+                name = P().info(sym).get("name")
+            except Exception:
+                name = None
         closes = [float(c) for c in h["Close"].tolist()] if not h.empty else []
         last = closes[-1] if closes else None
         prev = closes[-2] if len(closes) > 1 else None
-        return {"symbol": sym, "name": MARKET_NAMES.get(sym, sym), "price": last,
+        return {"symbol": sym, "name": name or sym, "price": last,
                 "change_pct": (last / prev - 1) * 100 if last and prev else None, "spark": closes}
 
-    return _map(tile, MARKET)
+    return _map(tile, prefs.get("market_symbols"))
 
 
 @app.get("/api/search")
@@ -141,7 +149,7 @@ def _valuation(symbol: str) -> dict:
     p = P()
     info = p.info(symbol)
     prices = p.history(symbol, "10y")["Close"]
-    long = None if settings.demo else sec.long_history(symbol)
+    long = None if prefs.is_demo() else sec.long_history(symbol)
     if long and long["eps"]:
         eps, rps, rep_cur, source = long["eps"], long["revenue_per_share"], long["currency"], long["source"]
     else:
@@ -254,7 +262,7 @@ def delete_position(pid: int):
 
 @app.get("/api/portfolio/summary")
 def portfolio_summary():
-    s = portfolio.summarize(db.list_positions(), P(), settings.base_currency)
+    s = portfolio.summarize(db.list_positions(), P(), prefs.get("base_currency"))
     rows = {r["symbol"]: r for r in _map(_list_row, [p["symbol"] for p in s["positions"]])}
     for pos in s["positions"]:
         extra = rows.get(pos["symbol"], {})
@@ -264,7 +272,7 @@ def portfolio_summary():
 
 @app.get("/api/portfolio/history")
 def portfolio_history(period: str = "1y"):
-    return portfolio.value_history(db.list_positions(), P(), settings.base_currency, period)
+    return portfolio.value_history(db.list_positions(), P(), prefs.get("base_currency"), period)
 
 
 @app.get("/api/portfolio/export")
@@ -338,7 +346,7 @@ def overview():
     """Everything the Overview page lists: portfolio and watchlist symbols in one list."""
     held = {p["symbol"] for p in db.list_positions()}
     watched = {w["symbol"]: w for w in db.list_watchlist()}
-    summary = portfolio.summarize(db.list_positions(), P(), settings.base_currency)
+    summary = portfolio.summarize(db.list_positions(), P(), prefs.get("base_currency"))
     by_sym = {r["symbol"]: r for r in summary["positions"]}
     syms = list(dict.fromkeys(list(by_sym) + list(watched)))
     rows = _map(_list_row, syms)
@@ -380,17 +388,26 @@ def _hint(key: str) -> str:
     return f"...{key[-4:]}" if len(key) > 8 else ("set" if key else "")
 
 
+def _is_local(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    proxied = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+    return host in ("127.0.0.1", "::1", "localhost", "testclient") and not proxied
+
+
 @app.get("/api/settings")
-def get_settings():
+def get_settings(request: Request):
     cfg = llm.load_config()
     return {
+        **prefs.all_prefs(),
         "llm_provider": cfg.provider, "llm_model": cfg.model, "llm_base_url": cfg.base_url,
         "llm_key_hint": _hint(cfg.api_key), "llm_configured": cfg.configured,
         "llm_presets": llm.PRESETS,
         "search_provider": db.get_setting("search_provider", "duckduckgo"),
         "search_key_hint": _hint(db.get_setting("search_api_key", "")),
-        "ai_language": db.get_setting("ai_language", "English"),
-        "base_currency": settings.base_currency, "demo": settings.demo,
+        "currencies": prefs.CURRENCIES,
+        "login_source": prefs.login_source(), "login_user": prefs.login_user(),
+        "server": {"host": settings.host, "port": settings.port, "db_path": str(db.current_path()),
+                   "local_request": _is_local(request)},
     }
 
 
@@ -403,22 +420,42 @@ class SettingsIn(BaseModel):
     search_provider: str | None = None
     search_api_key: str | None = None
     clear_search_key: bool = False
+    # preferences (see prefs.py)
+    base_currency: str | None = None
+    data_mode: str | None = None
+    start_page: str | None = None
+    theme: str | None = None
+    refresh_minutes: int | None = None
+    market_symbols: list[str] | str | None = None
+    sec_contact: str | None = None
     ai_language: str | None = None
+    ai_lens: str | None = None
+
+
+PREF_FIELDS = ("base_currency", "data_mode", "start_page", "theme", "refresh_minutes", "market_symbols",
+               "sec_contact", "ai_language", "ai_lens")
 
 
 @app.put("/api/settings")
-def put_settings(s: SettingsIn):
+def put_settings(s: SettingsIn, request: Request):
+    if s.llm_provider is not None and s.llm_provider not in llm.PRESETS:
+        raise HTTPException(400, "Unknown LLM provider")
+    if s.search_provider is not None and s.search_provider not in ("duckduckgo", "tavily", "brave"):
+        raise HTTPException(400, "Unknown search provider")
+    old_mode = prefs.get("data_mode")
+    try:
+        prefs.update({k: getattr(s, k) for k in PREF_FIELDS})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if prefs.get("data_mode") != old_mode:
+        cache.clear()  # never mix demo and live numbers
     if s.llm_provider is not None:
-        if s.llm_provider not in llm.PRESETS:
-            raise HTTPException(400, "Unknown LLM provider")
         db.set_setting("llm_provider", s.llm_provider)
-    for field in ("llm_model", "llm_base_url", "ai_language"):
+    for field in ("llm_model", "llm_base_url"):
         v = getattr(s, field)
         if v is not None:
             db.set_setting(field, v.strip())
     if s.search_provider is not None:
-        if s.search_provider not in ("duckduckgo", "tavily", "brave"):
-            raise HTTPException(400, "Unknown search provider")
         db.set_setting("search_provider", s.search_provider)
     if s.llm_api_key:
         db.set_setting("llm_api_key", s.llm_api_key.strip())
@@ -428,7 +465,55 @@ def put_settings(s: SettingsIn):
         db.set_setting("search_api_key", s.search_api_key.strip())
     if s.clear_search_key:
         db.set_setting("search_api_key", "")
-    return get_settings()
+    return get_settings(request)
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=200)
+
+
+@app.put("/api/settings/login")
+def put_login(body: LoginIn, request: Request):
+    if prefs.login_source() == "env":
+        raise HTTPException(400, "The login is defined in .env on the server; change it there.")
+    if not prefs.login_source() and not _is_local(request):
+        raise HTTPException(403, "The first login can only be set from the machine running Flower.")
+    try:
+        prefs.set_login(body.username, body.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True, "login_source": prefs.login_source(), "login_user": prefs.login_user()}
+
+
+@app.delete("/api/settings/login")
+def delete_login():
+    if prefs.login_source() == "env":
+        raise HTTPException(400, "The login is defined in .env on the server; remove it there.")
+    prefs.clear_login()
+    return {"ok": True, "login_source": prefs.login_source()}
+
+
+@app.post("/api/settings/clear-cache")
+def clear_cache():
+    cache.clear()
+    return {"ok": True}
+
+
+@app.get("/api/backup")
+def backup():
+    """Download a consistent copy of the whole database (portfolio, watchlist, settings, API keys)."""
+    import sqlite3
+    import tempfile
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    with db.connect() as src:
+        dst = sqlite3.connect(tmp.name)
+        src.backup(dst)
+        dst.close()
+    return FileResponse(tmp.name, filename="flower-backup.db", media_type="application/octet-stream",
+                        background=BackgroundTask(os.unlink, tmp.name))
 
 
 @app.post("/api/settings/test-llm")
@@ -493,6 +578,11 @@ def ai_ask(symbol: str, body: AskIn):
 # --- frontend -------------------------------------------------------------------------
 
 @app.get("/")
+def page_home():
+    return RedirectResponse("/overview" if prefs.get("start_page") == "overview" else "/terminal")
+
+
+@app.get("/terminal")
 def page_terminal():
     return FileResponse(FRONTEND / "terminal.html")
 

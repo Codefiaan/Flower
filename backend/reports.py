@@ -18,9 +18,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
-from . import db, llm
+from . import db, llm, prefs
 from .cache import ttl_cache
-from .config import settings
 from .providers import sec
 
 log = logging.getLogger(__name__)
@@ -172,7 +171,7 @@ def _download(url: str) -> bytes:
 def find_documents(symbol: str, name: str, website: str | None) -> list[dict]:
     """Return up to two source documents: {title, url, source, text}."""
     docs: list[dict] = []
-    if settings.demo:
+    if prefs.is_demo():
         return docs  # demo mode never goes online
     cik = sec.cik_for(symbol)
     if cik:
@@ -277,7 +276,7 @@ def stream_report(symbol: str, info: dict, fin: dict, lens: str = "general", ref
     context, sources = build_context(info, fin, docs)
     yield {"type": "sources", "sources": sources}
     yield {"type": "status", "text": f"Analysing with {llm.load_config().model}..."}
-    language = db.get_setting("ai_language", "English")
+    language = prefs.get("ai_language")
     out = []
     for chunk in llm.stream_chat([{"role": "user", "content": REPORT_TASK.format(context=context)}],
                                  system_prompt(lens, language)):
@@ -295,7 +294,7 @@ def stream_answer(symbol: str, info: dict, fin: dict, question: str, history: li
     docs = find_documents(symbol, info.get("name") or symbol, info.get("website"))
     context, sources = build_context(info, fin, docs)
     yield {"type": "sources", "sources": sources}
-    language = db.get_setting("ai_language", "English")
+    language = prefs.get("ai_language")
     messages = [{"role": "user", "content": f"Reference material:\n{context}"},
                 {"role": "assistant", "content": "Understood. I will answer based on this material."}]
     for m in history[-8:]:

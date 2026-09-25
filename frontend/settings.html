@@ -6,113 +6,144 @@
   <title>Flower Settings</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='8' fill='black'/></svg>">
   <link rel="stylesheet" href="/static/overview.css">
-  <style>
-    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 24px 60px; }
-    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
-    .card h2 { margin: 0; font-size: 18px; }
-    .card p { margin: 0; color: var(--muted); font-size: 14px; }
-    select.in { background: var(--soft); border: 0; border-radius: 12px; padding: 10px 12px; }
-    .ok { color: var(--up); }
-    .hint { font-size: 12px; color: var(--muted); }
-    code { background: var(--soft); padding: 1px 5px; border-radius: 6px; }
-  </style>
-  <script>try { const t = localStorage.getItem("flower-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}</script>
+  <link rel="stylesheet" href="/static/settings.css">
+  <script>try { const t = localStorage.getItem("flower-theme"); if (t && t !== "system") document.documentElement.dataset.theme = t; } catch (_) {}</script>
 </head>
 <body>
   <header class="nav">
     <a class="logo" href="/overview">flower</a>
-    <nav><a href="/overview">Overview</a><a href="/">Terminal</a><a href="/settings" class="active">Settings</a></nav>
+    <nav class="pages" aria-label="Pages">
+      <a href="/terminal">Terminal</a><a href="/overview">Overview</a><a href="/settings" class="active" aria-current="page">Settings</a>
+    </nav>
   </header>
-  <div class="wrap">
-    <h1 style="margin:10px 0 0">Settings</h1>
-    <p class="muted">Keys are stored on your Flower server (SQLite) and are never sent back to the browser. Only the last 4 characters are shown.</p>
 
-    <form id="llm" class="card">
-      <h2>AI model (bring your own key)</h2>
-      <p>Used for the annual-report analysis and the "Ask about this stock" chat. DeepSeek is inexpensive; any OpenAI-compatible service works.</p>
-      <div class="field"><label>Provider</label><select class="in" name="llm_provider" id="provider"></select></div>
-      <div class="field"><label>API key <span id="keyHint" class="hint"></span></label><input name="llm_api_key" type="password" autocomplete="off" placeholder="Paste a new key to replace the stored one"></div>
-      <div class="row" style="display:flex;gap:10px">
-        <div class="field"><label>Model</label><input name="llm_model" id="model"></div>
-        <div class="field"><label>Base URL</label><input name="llm_base_url" id="baseUrl"></div>
-      </div>
-      <p class="hint">Model names change often. Check your provider's documentation for current model IDs if the test fails.</p>
-      <div class="field"><label>Language of AI answers</label><input name="ai_language" id="lang" placeholder="English"></div>
-      <div class="btnrow"><button class="primary">Save</button><button type="button" class="ghost" id="test">Test connection</button><button type="button" class="ghost" id="clearKey">Remove key</button></div>
-      <p id="llmMsg"></p>
-    </form>
+  <div class="settings">
+    <aside class="side" aria-label="Settings sections">
+      <a href="#general" class="on">General</a>
+      <a href="#data">Data &amp; markets</a>
+      <a href="#ai">AI model &amp; API key</a>
+      <a href="#search">Web search</a>
+      <a href="#security">Login &amp; security</a>
+      <a href="#backup">Backup &amp; import</a>
+      <a href="#about">About</a>
+    </aside>
 
-    <form id="search" class="card">
-      <h2>Web search for annual reports</h2>
-      <p>US companies are read directly from SEC EDGAR (free, no key). For other companies (e.g. DAX members) Flower searches the web for the annual report PDF.
-        Without a key it uses DuckDuckGo's HTML page, which works but can be rate-limited. Tavily and Brave Search offer free API tiers.</p>
-      <div class="field"><label>Search provider</label>
-        <select class="in" name="search_provider" id="sprov"><option value="duckduckgo">DuckDuckGo (no key, best effort)</option><option value="tavily">Tavily (API key)</option><option value="brave">Brave Search (API key)</option></select></div>
-      <div class="field"><label>Search API key <span id="skeyHint" class="hint"></span></label><input name="search_api_key" type="password" autocomplete="off" placeholder="Only for Tavily / Brave"></div>
-      <div class="btnrow"><button class="primary">Save</button><button type="button" class="ghost" id="clearSKey">Remove key</button></div>
-      <p id="searchMsg"></p>
-    </form>
+    <div class="content">
+      <h1>Settings</h1>
+      <p class="muted lead">Everything is stored on your Flower server. API keys and passwords are never sent back to the browser.</p>
 
-    <div class="card">
-      <h2>Server</h2>
-      <p id="serverInfo"></p>
-      <p class="hint">Base currency, data mode, login and port are set in the <code>.env</code> file on the server (see README).</p>
+      <!-- General -->
+      <form id="general" class="card" data-section>
+        <h2>General</h2>
+        <div class="field"><label>Start page <span class="hint">What opens at http://your-server/</span></label>
+          <div class="choice" data-name="start_page">
+            <button type="button" data-v="terminal"><b>Terminal</b><span>Bloomberg-style, keyboard-driven</span></button>
+            <button type="button" data-v="overview"><b>Overview</b><span>Clean list of all your stocks</span></button>
+          </div></div>
+        <div class="field"><label>Theme of Overview &amp; Settings</label>
+          <div class="seg" data-name="theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
+        <div class="row">
+          <div class="field"><label for="base_currency">Base currency <span class="hint">Portfolio totals</span></label><select id="base_currency" name="base_currency"></select></div>
+          <div class="field"><label for="refresh_minutes">Auto-refresh prices</label>
+            <select id="refresh_minutes" name="refresh_minutes"><option value="0">Off</option><option value="1">Every minute</option><option value="5">Every 5 minutes</option>
+              <option value="15">Every 15 minutes</option><option value="30">Every 30 minutes</option><option value="60">Every hour</option></select></div>
+        </div>
+        <div class="actions"><button class="primary">Save</button></div>
+      </form>
+
+      <!-- Data -->
+      <form id="data" class="card" data-section>
+        <h2>Data &amp; markets</h2>
+        <div class="field"><label>Data source</label>
+          <div class="choice" data-name="data_mode">
+            <button type="button" data-v="live"><b>Live</b><span>Yahoo Finance + SEC EDGAR (internet)</span></button>
+            <button type="button" data-v="demo"><b>Demo</b><span>Synthetic sample data, works offline</span></button>
+          </div></div>
+        <div class="field"><label for="market_symbols">Market overview symbols <span class="hint">Shown on the Terminal's F1 page. Yahoo symbols, separated by commas.</span></label>
+          <textarea id="market_symbols" name="market_symbols" rows="3" spellcheck="false"></textarea>
+          <div class="hint">Examples: <code>^GSPC</code> S&amp;P 500 · <code>^GDAXI</code> DAX · <code>^STOXX50E</code> Euro Stoxx 50 · <code>EURUSD=X</code> · <code>GC=F</code> gold · <code>BTC-USD</code> · <code>SAP.DE</code>
+            · <button type="button" class="link" id="resetMarket">reset to default</button></div></div>
+        <div class="field"><label for="sec_contact">Contact e-mail for SEC EDGAR <span class="hint">The SEC asks every client to identify itself. Only sent to sec.gov.</span></label>
+          <input id="sec_contact" name="sec_contact" type="email"></div>
+        <div class="actions"><button type="button" class="ghost" id="clearCache">Clear data cache</button><button class="primary">Save</button></div>
+      </form>
+
+      <!-- AI -->
+      <form id="ai" class="card" data-section>
+        <h2>AI model &amp; API key <span class="badge" id="aiBadge"></span></h2>
+        <p>Used for the annual-report analysis and the "Ask about this stock" chat. You pay your provider directly per use.</p>
+        <div class="field"><label for="llm_provider">Provider</label><select id="llm_provider" name="llm_provider"></select></div>
+        <div class="field"><label for="llm_api_key">API key <span class="hint" id="keyHint"></span></label>
+          <div class="pw"><input id="llm_api_key" name="llm_api_key" type="password" autocomplete="off" placeholder="Paste your API key"><button type="button" class="ghost small" data-show="llm_api_key">Show</button></div>
+          <div class="hint" id="keyHelp"></div></div>
+        <div class="row">
+          <div class="field"><label for="llm_model">Model</label><input id="llm_model" name="llm_model" spellcheck="false"></div>
+          <div class="field"><label for="llm_base_url">Base URL</label><input id="llm_base_url" name="llm_base_url" spellcheck="false"></div>
+        </div>
+        <p class="hint">Model names change often. If the test fails with "model not found", check your provider's list of current models.</p>
+        <div class="row">
+          <div class="field"><label for="ai_language">Language of AI answers</label><input id="ai_language" name="ai_language" list="langs"><datalist id="langs"><option>English</option><option>German</option><option>French</option><option>Spanish</option></datalist></div>
+          <div class="field"><label for="ai_lens">Default analysis lens</label>
+            <select id="ai_lens" name="ai_lens"><option value="general">Balanced view</option><option value="value">Value (Benjamin Graham)</option><option value="growth">Growth / quality</option></select></div>
+        </div>
+        <div class="actions"><button type="button" class="ghost danger" id="clearKey">Remove key</button><button type="button" class="ghost" id="testLlm">Test connection</button><button class="primary">Save</button></div>
+        <p class="result" id="llmResult"></p>
+      </form>
+
+      <!-- Search -->
+      <form id="search" class="card" data-section>
+        <h2>Web search for annual reports</h2>
+        <p>US companies are read directly from SEC EDGAR (free). For other companies, e.g. DAX members, Flower searches the web for the annual report PDF.</p>
+        <div class="field"><label>Search provider</label>
+          <div class="choice three" data-name="search_provider">
+            <button type="button" data-v="duckduckgo"><b>DuckDuckGo</b><span>No key, best effort</span></button>
+            <button type="button" data-v="tavily"><b>Tavily</b><span>API key, free tier</span></button>
+            <button type="button" data-v="brave"><b>Brave Search</b><span>API key, free tier</span></button>
+          </div></div>
+        <div class="field" id="searchKeyField"><label for="search_api_key">Search API key <span class="hint" id="skeyHint"></span></label>
+          <div class="pw"><input id="search_api_key" name="search_api_key" type="password" autocomplete="off" placeholder="Paste your API key"><button type="button" class="ghost small" data-show="search_api_key">Show</button></div></div>
+        <div class="actions"><button type="button" class="ghost danger" id="clearSKey">Remove key</button><button class="primary">Save</button></div>
+      </form>
+
+      <!-- Security -->
+      <form id="security" class="card" data-section>
+        <h2>Login &amp; security <span class="badge" id="loginBadge"></span></h2>
+        <p id="loginText"></p>
+        <div id="loginFields">
+          <div class="field"><label for="lu">Username</label><input id="lu" name="username" autocomplete="username"></div>
+          <div class="row">
+            <div class="field"><label for="lp">New password <span class="hint">at least 8 characters</span></label><input id="lp" name="password" type="password" autocomplete="new-password"></div>
+            <div class="field"><label for="lp2">Repeat password</label><input id="lp2" name="password2" type="password" autocomplete="new-password"></div>
+          </div>
+          <div class="actions"><button type="button" class="ghost danger" id="removeLogin">Remove login</button><button class="primary" id="saveLogin">Save login</button></div>
+        </div>
+        <p class="result" id="loginResult"></p>
+      </form>
+
+      <!-- Backup -->
+      <section id="backup" class="card">
+        <h2>Backup &amp; import</h2>
+        <div class="tiles">
+          <a class="tile" href="/api/portfolio/export"><b>Export portfolio</b><span>CSV file with all your lots</span></a>
+          <label class="tile"><b>Import portfolio</b><span>CSV with columns symbol, shares, buy_price, buy_date, note</span><input type="file" id="importFile" accept=".csv,text/csv" hidden></label>
+          <a class="tile" href="/api/backup"><b>Download full backup</b><span>Database with portfolio, watchlist and settings. Contains your API keys, so keep it private.</span></a>
+        </div>
+        <p class="result" id="importResult"></p>
+      </section>
+
+      <!-- About -->
+      <section id="about" class="card">
+        <h2>About</h2>
+        <dl class="about" id="aboutList"></dl>
+        <p class="hint">Server address and port are set in the <code>.env</code> file on the server and need a restart (see README).
+          Flower is an information tool only: no trading, not investment advice.</p>
+      </section>
     </div>
   </div>
-<script src="/static/common.js"></script>
-<script>
-"use strict";
-const { api, esc } = Flower;
-const $ = (s) => document.querySelector(s);
-let presets = {};
 
-function fill(s) {
-  presets = s.llm_presets;
-  $("#provider").innerHTML = Object.entries(presets).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
-  $("#provider").value = s.llm_provider;
-  $("#model").value = s.llm_model;
-  $("#baseUrl").value = s.llm_base_url;
-  $("#lang").value = s.ai_language;
-  $("#keyHint").textContent = s.llm_key_hint ? `(stored: ${s.llm_key_hint})` : "(none stored)";
-  $("#sprov").value = s.search_provider;
-  $("#skeyHint").textContent = s.search_key_hint ? `(stored: ${s.search_key_hint})` : "(none stored)";
-  $("#serverInfo").textContent = `Base currency: ${s.base_currency} · Data: ${s.demo ? "DEMO (synthetic sample data)" : "Yahoo Finance"} · AI: ${s.llm_configured ? "configured" : "not configured"}`;
-}
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-$("#provider").addEventListener("change", (e) => {
-  const p = presets[e.target.value];
-  $("#model").value = p.model;
-  $("#baseUrl").value = p.base_url;
-});
-
-async function save(body, msgEl) {
-  try {
-    fill(await api("/api/settings", { method: "PUT", json: body }));
-    msgEl.innerHTML = `<span class="ok">Saved.</span>`;
-  } catch (e) { msgEl.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
-}
-
-$("#llm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const f = Object.fromEntries(new FormData(e.target));
-  save(f, $("#llmMsg"));
-  e.target.llm_api_key.value = "";
-});
-$("#search").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const f = Object.fromEntries(new FormData(e.target));
-  save(f, $("#searchMsg"));
-  e.target.search_api_key.value = "";
-});
-$("#clearKey").addEventListener("click", () => save({ clear_llm_key: true }, $("#llmMsg")));
-$("#clearSKey").addEventListener("click", () => save({ clear_search_key: true }, $("#searchMsg")));
-$("#test").addEventListener("click", async () => {
-  $("#llmMsg").textContent = "Testing…";
-  const r = await api("/api/settings/test-llm", { method: "POST" }).catch((e) => ({ ok: false, error: e.message }));
-  $("#llmMsg").innerHTML = r.ok ? `<span class="ok">Connected. Model replied: ${esc(r.reply)}</span>` : `<span class="err">${esc(r.error)}</span>`;
-});
-
-api("/api/settings").then(fill);
-</script>
+  <script src="/static/common.js"></script>
+  <script src="/static/settings.js"></script>
 </body>
 </html>

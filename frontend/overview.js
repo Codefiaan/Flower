@@ -12,7 +12,7 @@ let heroChart = null, heroSeries = null, sheetChart = null, aiAbort = null;
 /* ---------- theme ---------- */
 
 function applyTheme(t) {
-  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
 }
 try { applyTheme(localStorage.getItem("flower-theme")); } catch (_) { /* storage blocked */ }
 $("#theme").addEventListener("click", () => {
@@ -20,6 +20,7 @@ $("#theme").addEventListener("click", () => {
   const next = dark ? "light" : "dark";
   applyTheme(next);
   try { localStorage.setItem("flower-theme", next); } catch (_) { /* ignore */ }
+  api("/api/settings", { method: "PUT", json: { theme: next } }).catch(() => {});
   restyleCharts();
 });
 
@@ -210,7 +211,7 @@ async function openSheet(sym) {
     <h3>Signal check</h3><div class="checks" id="sSig"><div class="muted">Loading…</div></div>
     <h3>AI analysis</h3><div id="sAi"></div>
     <h3>News</h3><div class="news" id="sNews"><div class="muted">Loading…</div></div>
-    <div class="btnrow"><a class="primary" href="/#/sec/${encodeURIComponent(sym)}/des">Open in Terminal</a>
+    <div class="btnrow"><a class="primary" href="/terminal#/sec/${encodeURIComponent(sym)}/des">Open in Terminal</a>
       ${row.in_watchlist ? `<button class="ghost" id="unwatch">Remove from watchlist</button>` : `<button class="ghost" id="watch">Add to watchlist</button>`}</div>`;
   $("#closeSheet").addEventListener("click", closeSheet);
   const w = $("#watch"), uw = $("#unwatch");
@@ -265,7 +266,7 @@ async function renderAi(sym) {
   const cached = await api(`/api/ai/report/${encodeURIComponent(sym)}?lens=general`).catch(() => null);
   if (state.selected !== sym) return;
   if (cached) {
-    box.innerHTML = `<div class="ai">${markdown(cached.content, cached.sources)}</div><div class="muted small">Generated ${esc(cached.created)} · <a href="/#/sec/${encodeURIComponent(sym)}/ai">details & chat</a></div>`;
+    box.innerHTML = `<div class="ai">${markdown(cached.content, cached.sources)}</div><div class="muted small">Generated ${esc(cached.created)} · <a href="/terminal#/sec/${encodeURIComponent(sym)}/ai">details & chat</a></div>`;
     return;
   }
   box.innerHTML = `<p class="muted small">Let your AI model read the latest annual report and summarise growth, balance sheet, outlook and risks.</p>
@@ -280,7 +281,7 @@ async function renderAi(sym) {
         if (ev.type === "status") $("#aiSt").textContent = ev.text;
         if (ev.type === "sources") sources = ev.sources;
         if (ev.type === "delta") { text += ev.text; $("#aiOut").innerHTML = markdown(text, sources); }
-        if (ev.type === "error") $("#aiSt").innerHTML = `<span class="err">${esc(ev.text)}</span>${ev.text.includes("Settings") ? ' <a href="/settings">Open settings</a>' : ""}`;
+        if (ev.type === "error") $("#aiSt").innerHTML = `<span class="err">${esc(ev.text)}</span>${ev.text.includes("Settings") ? ' <a href="/settings#ai">Open settings</a>' : ""}`;
         if (ev.type === "done") $("#aiSt").textContent = "AI output can contain errors. Check the cited sources.";
       }, aiAbort.signal);
     } catch (e) { if (e.name !== "AbortError") $("#aiSt").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
@@ -355,5 +356,17 @@ $("#addForm").addEventListener("submit", async (e) => {
 
 /* ---------- boot ---------- */
 
-api("/api/status").then((s) => { $("#demo").hidden = !s.demo; }).catch(() => {});
+api("/api/status").then((s) => {
+  $("#demo").hidden = !s.demo;
+  let stored = null;
+  try { stored = localStorage.getItem("flower-theme"); } catch (_) { /* ignore */ }
+  if (s.theme !== stored) {
+    applyTheme(s.theme);
+    try { localStorage.setItem("flower-theme", s.theme); } catch (_) { /* ignore */ }
+    restyleCharts();
+  }
+  if (s.refresh_minutes > 0) {
+    setInterval(() => { loadOverview().then(loadHero); }, s.refresh_minutes * 60_000);
+  }
+}).catch(() => {});
 loadOverview().then(loadHero);

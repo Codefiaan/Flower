@@ -6,14 +6,13 @@
   <title>Flower Overview</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='8' fill='black'/><text x='4.5' y='12' font-size='10' font-family='sans-serif' fill='white'>F</text></svg>">
   <link rel="stylesheet" href="/static/overview.css">
+  <script>try { const t = localStorage.getItem("flower-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (_) {}</script>
 </head>
 <body>
   <header class="nav">
     <a class="logo" href="/overview">flower</a>
-    <nav>
-      <a href="/overview" class="active">Overview</a>
-      <a href="/">Terminal</a>
-      <a href="/settings">Settings</a>
+    <nav class="pages" aria-label="Pages">
+      <a href="/terminal">Terminal</a><a href="/overview" class="active" aria-current="page">Overview</a><a href="/settings">Settings</a>
     </nav>
     <button class="icon" id="theme" title="Toggle dark mode" aria-label="Toggle dark mode"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
   </header>

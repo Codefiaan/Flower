@@ -49,6 +49,10 @@ def set_path(path: Path) -> None:
     init()
 
 
+def current_path() -> Path:
+    return _path
+
+
 def init() -> None:
     _path.parent.mkdir(parents=True, exist_ok=True)
     with connect() as con:

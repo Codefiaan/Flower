@@ -132,14 +132,72 @@ def test_ai_report_streams_and_caches(client, stub_llm, provider, base_suffix):
     assert client.post("/api/settings/test-llm").json()["ok"] is True
 
 
-def test_basic_auth(client, monkeypatch):
-    from backend import main
+def test_basic_auth_from_env(client, monkeypatch):
+    from backend import prefs
     from backend.config import Settings
 
-    monkeypatch.setattr(main, "settings", Settings(user="me", password="pw"))
+    monkeypatch.setattr(prefs, "settings", Settings(user="me", password="pw"))
     assert client.get("/api/status").status_code == 401
     assert client.get("/api/status", auth=("me", "wrong")).status_code == 401
     assert client.get("/api/status", auth=("me", "pw")).status_code == 200
+    # a login from .env can't be changed on the Settings page
+    assert client.put("/api/settings/login", json={"username": "x", "password": "12345678"},
+                      auth=("me", "pw")).status_code == 400
+
+
+def test_login_set_on_settings_page(client):
+    assert client.put("/api/settings/login", json={"username": "eric", "password": "short"}).status_code == 422
+    r = client.put("/api/settings/login", json={"username": "eric", "password": "correct horse"})
+    assert r.json()["login_source"] == "app"
+    assert client.get("/api/status").status_code == 401
+    assert client.get("/api/status", auth=("eric", "wrong password")).status_code == 401
+    assert client.get("/api/status", auth=("eric", "correct horse")).status_code == 200
+    s = client.get("/api/settings", auth=("eric", "correct horse")).json()
+    assert s["login_user"] == "eric" and "correct horse" not in str(s)
+    client.delete("/api/settings/login", auth=("eric", "correct horse"))
+    assert client.get("/api/status").status_code == 200
+
+
+def test_first_login_only_from_local_machine(client):
+    r = client.put("/api/settings/login", json={"username": "a", "password": "12345678"},
+                   headers={"X-Forwarded-For": "8.8.8.8"})
+    assert r.status_code == 403
+
+
+def test_preferences_roundtrip_and_validation(client):
+    r = client.put("/api/settings", json={"base_currency": "usd", "start_page": "overview", "theme": "dark",
+                                          "refresh_minutes": 5, "market_symbols": "^GSPC, sap.de", "ai_lens": "value",
+                                          "ai_language": "German", "sec_contact": "me@example.org"})
+    s = r.json()
+    assert s["base_currency"] == "USD" and s["market_symbols"] == ["^GSPC", "SAP.DE"]
+    assert s["theme"] == "dark" and s["refresh_minutes"] == 5 and s["ai_language"] == "German"
+    assert client.get("/api/portfolio/summary").json()["base_currency"] == "USD"
+    assert [t["symbol"] for t in client.get("/api/market").json()] == ["^GSPC", "SAP.DE"]
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/overview"
+    # one invalid field rejects the whole update
+    bad = client.put("/api/settings", json={"base_currency": "EUR", "refresh_minutes": 7})
+    assert bad.status_code == 400
+    assert client.get("/api/settings").json()["base_currency"] == "USD"
+    for payload in ({"base_currency": "XXX"}, {"data_mode": "fast"}, {"market_symbols": "bad symbol!"},
+                    {"sec_contact": "nope"}, {"theme": "pink"}):
+        assert client.put("/api/settings", json=payload).status_code == 400
+
+
+def test_switching_data_mode(client):
+    assert client.get("/api/status").json()["demo"] is True
+    s = client.put("/api/settings", json={"data_mode": "live"}).json()
+    assert s["data_mode"] == "live"
+    from backend.providers import get_provider
+    assert get_provider().name == "yahoo"
+    client.put("/api/settings", json={"data_mode": "demo"})
+    assert get_provider().name == "demo"
+
+
+def test_backup_download(client):
+    client.post("/api/watchlist", json={"symbol": "KO"})
+    r = client.get("/api/backup")
+    assert r.status_code == 200 and r.content.startswith(b"SQLite format 3")
 
 
 def test_proxy_without_login_is_refused(client):
@@ -147,7 +205,7 @@ def test_proxy_without_login_is_refused(client):
 
 
 def test_pages_served(client):
-    for url, marker in [("/", "FLOWER"), ("/overview", "flower"), ("/settings", "Settings"),
+    for url, marker in [("/", "FLOWER"), ("/terminal", "FLOWER"), ("/overview", "flower"), ("/settings", "Settings"),
                         ("/static/vendor/lightweight-charts.js", "LightweightCharts")]:
         r = client.get(url)
         assert r.status_code == 200 and marker in r.text
