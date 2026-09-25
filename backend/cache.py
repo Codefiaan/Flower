@@ -1,4 +1,4 @@
-"""Kleiner In-Memory-TTL-Cache, damit Yahoo nicht bei jedem Klick erneut abgefragt wird."""
+"""Small in-memory TTL cache so Yahoo isn't queried again on every click."""
 from __future__ import annotations
 
 import functools
@@ -8,6 +8,20 @@ from typing import Any, Callable
 
 _store: dict[tuple, tuple[float, Any]] = {}
 _lock = threading.Lock()
+
+
+class Uncached:
+    """Return `uncached(value)` from a cached function to hand back `value` without storing it,
+    e.g. after a failed request, so a temporary outage or rate limit isn't remembered."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any):
+        self.value = value
+
+
+def uncached(value: Any) -> Uncached:
+    return Uncached(value)
 
 
 def ttl_cache(seconds: int) -> Callable:
@@ -21,6 +35,8 @@ def ttl_cache(seconds: int) -> Callable:
                 if hit and hit[0] > now:
                     return hit[1]
             value = fn(*args, **kwargs)
+            if isinstance(value, Uncached):
+                return value.value
             with _lock:
                 _store[key] = (now + seconds, value)
             return value

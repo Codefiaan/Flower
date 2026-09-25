@@ -2,7 +2,9 @@
 "use strict";
 
 const { api, num, price, pct, frac, big, money, cls, esc, ago, safeUrl, markdown, stream, sparkline, debounce, isNum } = Flower;
-const $ = (s, el = document) => el.querySelector(s);
+// Views load data asynchronously. If the user has switched views by the time a response arrives,
+// its target element is gone; writing into a detached placeholder keeps that harmless.
+const $ = (s, el = document) => el.querySelector(s) || (el === document && s.startsWith("#") ? document.createElement("div") : null);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const view = $("#view");
 const LWC = window.LightweightCharts;
@@ -258,8 +260,9 @@ async function renderPortfolio() {
   $("#imp").addEventListener("submit", async (e) => {
     e.preventDefault();
     const r = await load("IMPORT", () => api("/api/portfolio/import", { method: "POST", body: e.target.csv.value, headers: { "Content-Type": "text/plain" } }));
+    if (r.added) await renderPortfolio();
+    // set after the refresh, which would otherwise overwrite the message with READY
     setStatus(`IMPORTED ${r.added} LOTS${r.errors.length ? " · ERRORS: " + r.errors.join("; ") : ""}`, r.errors.length ? "err" : "");
-    if (r.added) renderPortfolio();
   });
 
   let s;
@@ -304,7 +307,7 @@ async function renderPortfolio() {
   $("#pf-alloc").innerHTML = allocBlock("BY SECTOR", s.by_sector) + allocBlock("BY CURRENCY", s.by_currency);
   api("/api/portfolio/history?period=1y").then((pts) => {
     const el = $("#pf-chart");
-    if (!el || !pts.length) return;
+    if (!el.isConnected || !pts.length) return;
     const ch = LWC.createChart(el, chartTheme());
     charts.push(ch);
     ch.addAreaSeries({ lineColor: "#ffa028", topColor: "rgba(255,160,40,.25)", bottomColor: "rgba(255,160,40,0)", lineWidth: 2 })

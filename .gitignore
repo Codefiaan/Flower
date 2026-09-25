@@ -6,3 +6,5 @@ venv/
 data/*.db
 data/*.db-journal
 .env
+check-report.txt
+.coverage

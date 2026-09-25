@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import httpx
 
 from . import db, llm, prefs
-from .cache import ttl_cache
+from .cache import ttl_cache, uncached
 from .providers import sec
 
 log = logging.getLogger(__name__)
@@ -209,7 +209,7 @@ def find_documents(symbol: str, name: str, website: str | None) -> list[dict]:
             if len(text) > 5000:
                 docs.append({"title": r["title"] or r["url"], "url": r["url"], "source": "web search", "text": text})
                 return docs
-    return docs
+    return uncached(docs)  # nothing found (maybe a network hiccup): try again next time
 
 
 # --- prompts -----------------------------------------------------------------

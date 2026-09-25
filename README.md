@@ -83,11 +83,34 @@ The app keeps listening on `127.0.0.1:8000`. It refuses to start on a public add
 
 To move your local data to the server, use **Export CSV** in the Terminal portfolio view and then **Import CSV** on the server. Alternatively, copy `data/flower.db`, which also holds the watchlist and settings.
 
+## Checking your installation
+
+Double-click **`check.bat`** (Windows) or run `./check.sh` (Linux/macOS). It checks, among other things:
+- the Python version, the app's own `.venv`, installed packages, and that the database is writable
+- every page and API route, using sample data
+- whether this machine can reach Yahoo Finance and SEC EDGAR
+- real quotes, history, statements, news, search, screener, FX rates and the SEC history, with each value checked for plausibility
+
+Every line reads PASS, WARN or FAIL, with a reason. Everything is also written to **`check-report.txt`**; if something is FAIL, send that file for support.
+Options: `--llm` also sends a test message to your AI model; without `--live` only the offline checks run (`python -m backend.check --help`).
+
+## Automatic tests (GitHub Actions)
+
+Every push runs `.github/workflows/ci.yml`. It also runs on weekday mornings, to catch changes in Yahoo's data format:
+
+| Job | What it checks |
+|---|---|
+| Tests | Lint, JavaScript syntax, and all offline tests on **Windows and Ubuntu**, Python 3.11 and 3.12, with at least 80% coverage |
+| Browser end-to-end | Clicks through Terminal, Overview and Settings in Chromium, at desktop and phone width. Any JavaScript error fails the job |
+| Windows start.bat | Runs `start.bat` from scratch while another Python environment is active (the situation that broke the first start), then starts the server and requests every page |
+| Live data | The health check against real Yahoo Finance and SEC EDGAR on Windows and Ubuntu. The report appears in the run summary. This job may turn red when Yahoo rate-limits GitHub's servers, but it never blocks the others |
+
 ## Development
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                         # runs fully offline in demo mode
+python -m playwright install chromium   # once, for the browser tests
+pytest                         # all tests, fully offline (demo data, stubbed network)
 FLOWER_DEMO=1 python -m backend
 ```
 API docs: http://127.0.0.1:8000/api/docs

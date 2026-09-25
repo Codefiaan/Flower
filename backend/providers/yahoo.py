@@ -13,14 +13,14 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
-from ..cache import ttl_cache
+from ..cache import ttl_cache, uncached
 from .base import Provider, empty_info
 
 log = logging.getLogger(__name__)
 
 # period -> (yfinance period, interval)
 PERIODS = {
-    "1d": ("1d", "5m"),
+    "1d": ("5d", "5m"),  # trimmed to the last trading day, so weekends still show Friday
     "5d": ("5d", "30m"),
     "1mo": ("1mo", "1d"),
     "3mo": ("3mo", "1d"),
@@ -70,11 +70,12 @@ class YahooProvider(Provider):
     @ttl_cache(900)
     def info(self, symbol: str) -> dict[str, Any]:
         t = yf.Ticker(symbol)
+        failed = False
         try:
             i = t.info or {}
         except Exception as exc:  # network errors, rate limits, unknown symbol
             log.warning("info(%s) failed: %s", symbol, exc)
-            i = {}
+            i, failed = {}, True
         d = empty_info(symbol)
         price = _num(i.get("currentPrice") or i.get("regularMarketPrice"))
         prev = _num(i.get("regularMarketPreviousClose") or i.get("previousClose"))
@@ -132,7 +133,7 @@ class YahooProvider(Provider):
         if price is not None and prev:
             d["change"] = price - prev
             d["change_pct"] = (price / prev - 1) * 100
-        return d
+        return uncached(d) if failed else d
 
     @ttl_cache(300)
     def history(self, symbol: str, period: str = "1y") -> pd.DataFrame:
@@ -141,12 +142,16 @@ class YahooProvider(Provider):
             df = yf.Ticker(symbol).history(period=yp, interval=interval, auto_adjust=True)
         except Exception as exc:
             log.warning("history(%s) failed: %s", symbol, exc)
-            return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+            df = None
         if df is None or df.empty:
-            return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+            return uncached(pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"]))
         df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"])
         if interval.endswith("m"):
-            df.index = df.index.tz_convert("UTC").tz_localize(None)
+            if period == "1d":
+                last_day = df.index[-1].date()
+                df = df[[ts.date() == last_day for ts in df.index]]
+            idx = df.index if df.index.tz is not None else df.index.tz_localize("UTC")
+            df.index = idx.tz_convert("UTC").tz_localize(None)
         else:
             df.index = pd.to_datetime(df.index.date)
         return df
@@ -155,7 +160,7 @@ class YahooProvider(Provider):
     def statements(self, symbol: str, freq: str = "annual") -> dict[str, pd.DataFrame]:
         t = yf.Ticker(symbol)
         q = freq == "quarterly"
-        out = {}
+        out, failed = {}, False
         for key, annual, quarterly in (
             ("income", "income_stmt", "quarterly_income_stmt"),
             ("balance", "balance_sheet", "quarterly_balance_sheet"),
@@ -165,9 +170,9 @@ class YahooProvider(Provider):
                 df = getattr(t, quarterly if q else annual)
             except Exception as exc:
                 log.warning("statements(%s, %s) failed: %s", symbol, key, exc)
-                df = None
+                df, failed = None, True
             out[key] = df if isinstance(df, pd.DataFrame) else pd.DataFrame()
-        return out
+        return uncached(out) if failed else out
 
     @ttl_cache(600)
     def news(self, symbol: str) -> list[dict]:
@@ -175,7 +180,7 @@ class YahooProvider(Provider):
             raw = yf.Ticker(symbol).get_news(count=20) or []
         except Exception as exc:
             log.warning("news(%s) failed: %s", symbol, exc)
-            return []
+            return uncached([])
         items = []
         for n in raw:
             c = n.get("content")
@@ -208,10 +213,12 @@ class YahooProvider(Provider):
     @ttl_cache(3600)
     def calendar(self, symbol: str) -> dict:
         try:
-            cal = yf.Ticker(symbol).calendar or {}
+            cal = yf.Ticker(symbol).calendar
+            if cal is None:
+                cal = {}
         except Exception as exc:
             log.warning("calendar(%s) failed: %s", symbol, exc)
-            cal = {}
+            return uncached({"earnings_date": None, "ex_dividend_date": None, "dividend_date": None})
         if isinstance(cal, pd.DataFrame):  # very old yfinance versions
             cal = cal.iloc[:, 0].to_dict() if not cal.empty else {}
         return {
@@ -226,7 +233,7 @@ class YahooProvider(Provider):
             quotes = yf.Search(query, max_results=10, news_count=0).quotes
         except Exception as exc:
             log.warning("search(%s) failed: %s", query, exc)
-            return []
+            return uncached([])
         return [
             {
                 "symbol": q.get("symbol"),

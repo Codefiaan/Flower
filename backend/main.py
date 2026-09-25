@@ -172,7 +172,7 @@ def _valuation(symbol: str) -> dict:
         fx = 1.0
     out = analysis.valuation_history(prices, eps, rps, fx)
     out.update(source=source, current_pe=info.get("pe"), current_ps=info.get("ps"))
-    return out
+    return out if out["points"] else cache.uncached(out)  # don't remember an empty result for an hour
 
 
 @app.get("/api/valuation/{symbol}")
