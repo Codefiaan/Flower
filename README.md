@@ -18,6 +18,8 @@ The app has two front ends over the same data:
 2. Double-click `start.bat`. The first start creates `.venv` and installs the dependencies.
 3. The browser opens http://127.0.0.1:8000.
 
+If it fails, delete the `.venv` folder in the app folder and double-click `start.bat` again. The script always uses the app's own Python in `.venv`, so other Python environments on your PC (e.g. from other tools) don't interfere.
+
 ### Linux / macOS (local)
 ```bash
 ./start.sh            # then open http://127.0.0.1:8000
