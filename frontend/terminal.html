@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flower Terminal</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='black'/><text x='3' y='13' font-size='13' font-family='monospace' fill='%23ff9900'>F</text></svg>">
+  <link rel="stylesheet" href="/static/terminal.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">FLOWER<span>TERMINAL</span></div>
+    <div class="cmd">
+      <span class="prompt">&gt;</span>
+      <input id="cmd" autocomplete="off" spellcheck="false" placeholder="Ticker or command, e.g. SAP.DE, AAPL FA, HELP" aria-label="Command line">
+      <button id="go" class="go">&lt;GO&gt;</button>
+      <div id="suggest" class="suggest" hidden></div>
+    </div>
+    <div class="meta">
+      <span id="provider" class="tag"></span>
+      <span id="clock"></span>
+      <a href="/overview" class="pagelink">OVERVIEW ↗</a>
+      <a href="/settings" class="pagelink">SETTINGS</a>
+    </div>
+  </header>
+
+  <nav class="fkeys" id="fkeys">
+    <button data-view="market"><b>F1</b> MKT</button>
+    <button data-view="portfolio"><b>F2</b> PORT</button>
+    <button data-view="watchlist"><b>F3</b> WATCH</button>
+    <button data-view="screener"><b>F4</b> SCRN</button>
+    <button data-view="news"><b>F5</b> NEWS</button>
+    <button data-view="help"><b>F9</b> HELP</button>
+    <span class="crumb" id="crumb"></span>
+  </nav>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="statusbar">
+    <span id="status">READY</span>
+    <span class="disclaimer">Information only · no trading · not investment advice · market data may be delayed</span>
+  </footer>
+
+  <script src="/static/vendor/lightweight-charts.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/terminal.js"></script>
+</body>
+</html>

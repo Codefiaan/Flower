@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flower Settings</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='8' fill='black'/></svg>">
+  <link rel="stylesheet" href="/static/overview.css">
+  <style>
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 24px 60px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+    .card h2 { margin: 0; font-size: 18px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14px; }
+    select.in { background: var(--soft); border: 0; border-radius: 12px; padding: 10px 12px; }
+    .ok { color: var(--up); }
+    .hint { font-size: 12px; color: var(--muted); }
+    code { background: var(--soft); padding: 1px 5px; border-radius: 6px; }
+  </style>
+  <script>try { const t = localStorage.getItem("flower-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}</script>
+</head>
+<body>
+  <header class="nav">
+    <a class="logo" href="/overview">flower</a>
+    <nav><a href="/overview">Overview</a><a href="/">Terminal</a><a href="/settings" class="active">Settings</a></nav>
+  </header>
+  <div class="wrap">
+    <h1 style="margin:10px 0 0">Settings</h1>
+    <p class="muted">Keys are stored on your Flower server (SQLite) and are never sent back to the browser. Only the last 4 characters are shown.</p>
+
+    <form id="llm" class="card">
+      <h2>AI model (bring your own key)</h2>
+      <p>Used for the annual-report analysis and the "Ask about this stock" chat. DeepSeek is inexpensive; any OpenAI-compatible service works.</p>
+      <div class="field"><label>Provider</label><select class="in" name="llm_provider" id="provider"></select></div>
+      <div class="field"><label>API key <span id="keyHint" class="hint"></span></label><input name="llm_api_key" type="password" autocomplete="off" placeholder="Paste a new key to replace the stored one"></div>
+      <div class="row" style="display:flex;gap:10px">
+        <div class="field"><label>Model</label><input name="llm_model" id="model"></div>
+        <div class="field"><label>Base URL</label><input name="llm_base_url" id="baseUrl"></div>
+      </div>
+      <p class="hint">Model names change often. Check your provider's documentation for current model IDs if the test fails.</p>
+      <div class="field"><label>Language of AI answers</label><input name="ai_language" id="lang" placeholder="English"></div>
+      <div class="btnrow"><button class="primary">Save</button><button type="button" class="ghost" id="test">Test connection</button><button type="button" class="ghost" id="clearKey">Remove key</button></div>
+      <p id="llmMsg"></p>
+    </form>
+
+    <form id="search" class="card">
+      <h2>Web search for annual reports</h2>
+      <p>US companies are read directly from SEC EDGAR (free, no key). For other companies (e.g. DAX members) Flower searches the web for the annual report PDF.
+        Without a key it uses DuckDuckGo's HTML page, which works but can be rate-limited. Tavily and Brave Search offer free API tiers.</p>
+      <div class="field"><label>Search provider</label>
+        <select class="in" name="search_provider" id="sprov"><option value="duckduckgo">DuckDuckGo (no key, best effort)</option><option value="tavily">Tavily (API key)</option><option value="brave">Brave Search (API key)</option></select></div>
+      <div class="field"><label>Search API key <span id="skeyHint" class="hint"></span></label><input name="search_api_key" type="password" autocomplete="off" placeholder="Only for Tavily / Brave"></div>
+      <div class="btnrow"><button class="primary">Save</button><button type="button" class="ghost" id="clearSKey">Remove key</button></div>
+      <p id="searchMsg"></p>
+    </form>
+
+    <div class="card">
+      <h2>Server</h2>
+      <p id="serverInfo"></p>
+      <p class="hint">Base currency, data mode, login and port are set in the <code>.env</code> file on the server (see README).</p>
+    </div>
+  </div>
+<script src="/static/common.js"></script>
+<script>
+"use strict";
+const { api, esc } = Flower;
+const $ = (s) => document.querySelector(s);
+let presets = {};
+
+function fill(s) {
+  presets = s.llm_presets;
+  $("#provider").innerHTML = Object.entries(presets).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+  $("#provider").value = s.llm_provider;
+  $("#model").value = s.llm_model;
+  $("#baseUrl").value = s.llm_base_url;
+  $("#lang").value = s.ai_language;
+  $("#keyHint").textContent = s.llm_key_hint ? `(stored: ${s.llm_key_hint})` : "(none stored)";
+  $("#sprov").value = s.search_provider;
+  $("#skeyHint").textContent = s.search_key_hint ? `(stored: ${s.search_key_hint})` : "(none stored)";
+  $("#serverInfo").textContent = `Base currency: ${s.base_currency} · Data: ${s.demo ? "DEMO (synthetic sample data)" : "Yahoo Finance"} · AI: ${s.llm_configured ? "configured" : "not configured"}`;
+}
+
+$("#provider").addEventListener("change", (e) => {
+  const p = presets[e.target.value];
+  $("#model").value = p.model;
+  $("#baseUrl").value = p.base_url;
+});
+
+async function save(body, msgEl) {
+  try {
+    fill(await api("/api/settings", { method: "PUT", json: body }));
+    msgEl.innerHTML = `<span class="ok">Saved.</span>`;
+  } catch (e) { msgEl.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+$("#llm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  save(f, $("#llmMsg"));
+  e.target.llm_api_key.value = "";
+});
+$("#search").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  save(f, $("#searchMsg"));
+  e.target.search_api_key.value = "";
+});
+$("#clearKey").addEventListener("click", () => save({ clear_llm_key: true }, $("#llmMsg")));
+$("#clearSKey").addEventListener("click", () => save({ clear_search_key: true }, $("#searchMsg")));
+$("#test").addEventListener("click", async () => {
+  $("#llmMsg").textContent = "Testing…";
+  const r = await api("/api/settings/test-llm", { method: "POST" }).catch((e) => ({ ok: false, error: e.message }));
+  $("#llmMsg").innerHTML = r.ok ? `<span class="ok">Connected. Model replied: ${esc(r.reply)}</span>` : `<span class="err">${esc(r.error)}</span>`;
+});
+
+api("/api/settings").then(fill);
+</script>
+</body>
+</html>

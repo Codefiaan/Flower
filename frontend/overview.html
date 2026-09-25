@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Flower Overview</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='8' fill='black'/><text x='4.5' y='12' font-size='10' font-family='sans-serif' fill='white'>F</text></svg>">
+  <link rel="stylesheet" href="/static/overview.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="logo" href="/overview">flower</a>
+    <nav>
+      <a href="/overview" class="active">Overview</a>
+      <a href="/">Terminal</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <button class="icon" id="theme" title="Toggle dark mode" aria-label="Toggle dark mode"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  </header>
+
+  <div class="layout">
+    <main>
+      <section class="hero">
+        <div class="label">Portfolio <span id="demo" class="pill" hidden>Demo data</span></div>
+        <div class="value" id="pv">–</div>
+        <div class="delta" id="pd"></div>
+        <div class="chart" id="pchart"></div>
+        <div class="chips" id="periods">
+          <button data-p="1d">1D</button><button data-p="5d">1W</button><button data-p="1mo">1M</button>
+          <button data-p="6mo">6M</button><button data-p="1y" class="on">1Y</button><button data-p="max">Max</button>
+        </div>
+      </section>
+
+      <section class="listhead">
+        <div class="seg" id="filter">
+          <button data-f="all" class="on">All</button><button data-f="portfolio">Portfolio</button><button data-f="watchlist">Watchlist</button>
+        </div>
+        <input id="q" type="search" placeholder="Search your stocks" aria-label="Search your stocks">
+        <select id="sort" aria-label="Sort">
+          <option value="value">Sort: position value</option><option value="day">Sort: today</option><option value="pl">Sort: total return</option>
+          <option value="pe">Sort: P/E</option><option value="div">Sort: dividend yield</option><option value="mcap">Sort: market cap</option>
+          <option value="score">Sort: signal score</option><option value="name">Sort: name</option>
+        </select>
+      </section>
+
+      <div class="cols" aria-hidden="true">
+        <span>Stock</span><span>P/E</span><span>Div.</span><span>Mkt cap</span><span>52W range</span><span>Signal</span><span>Position</span><span>Price</span>
+      </div>
+      <section id="list" class="list"><div class="empty">Loading…</div></section>
+      <p class="fine">Market data from Yahoo Finance, may be delayed. Information only, not investment advice. Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>.</p>
+    </main>
+
+    <aside class="sheet" id="sheet" hidden>
+      <div class="sheet-inner" id="sheet-body"></div>
+    </aside>
+  </div>
+
+  <button class="fab" id="add" aria-label="Add stock">+</button>
+
+  <dialog id="addDlg">
+    <form method="dialog" id="addForm">
+      <h2>Add stock</h2>
+      <div class="field"><label for="addSearch">Search by name, ticker or ISIN</label>
+        <input id="addSearch" autocomplete="off" placeholder="e.g. Siemens, AAPL, DE0007164600"><div id="addResults" class="results"></div></div>
+      <div id="addPicked" class="picked" hidden></div>
+      <div class="seg" id="addType"><button type="button" data-t="portfolio" class="on">Portfolio</button><button type="button" data-t="watchlist">Watchlist</button></div>
+      <div id="pfFields">
+        <div class="row">
+          <div class="field"><label>Shares</label><input name="shares" type="number" step="any" min="0"></div>
+          <div class="field"><label>Buy price <span id="curHint"></span></label><input name="buy_price" type="number" step="any" min="0"></div>
+        </div>
+        <div class="field"><label>Buy date</label><input name="buy_date" type="date"></div>
+      </div>
+      <div id="wlFields" hidden><div class="field"><label>Target price (optional)</label><input name="target_price" type="number" step="any" min="0"></div></div>
+      <div class="field"><label>Note</label><input name="note"></div>
+      <p class="err" id="addErr"></p>
+      <div class="actions"><button value="cancel" class="ghost" formnovalidate>Cancel</button><button value="ok" id="addOk" class="primary">Add</button></div>
+    </form>
+  </dialog>
+
+  <script src="/static/vendor/lightweight-charts.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/overview.js"></script>
+</body>
+</html>
