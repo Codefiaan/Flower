@@ -141,6 +141,18 @@ jobs:
           cache-dependency-path: requirements*.txt
       - name: Install
         run: python -m pip install -r requirements.txt
+      - name: "Diagnose: which User-Agent does the SEC accept from this runner?"
+        continue-on-error: true
+        run: |
+          for ua in "FlowerTerminal flower-ci@users.noreply.github.com" \
+                    "FlowerTerminal flower-terminal@example.com" \
+                    "Flower Terminal admin@flower-terminal.org" \
+                    "Mozilla/5.0 Flower-check (flower-terminal@example.com)" \
+                    "python-httpx/0.28.1"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -H "User-Agent: $ua" -H "Accept-Encoding: gzip, deflate" \
+                   https://www.sec.gov/files/company_tickers.json)
+            echo "$code  $ua"
+          done
       - name: Health check against real Yahoo Finance and SEC EDGAR (one retry)
         run: |
           report="check-report-${{ matrix.os }}.txt"
